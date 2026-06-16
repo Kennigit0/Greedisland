@@ -1,0 +1,18 @@
+services:
+  - type: worker
+    name: greed-island-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: greed-island-db
+          property: connectionString
+
+databases:
+  - name: greed-island-db
+    databaseName: greedisland
+    plan: free
