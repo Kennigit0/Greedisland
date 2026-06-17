@@ -178,17 +178,17 @@ def cmd_profile(message):
     shield = "🔒 Protected" if protected else "🔓 Unprotected"
 
     text = (
-        f"👤 *{p['username']}*\n\n"
-        f"💰 Jenny: *{p['jenny']:,}*\n"
-        f"📚 Binder: *{binder_count}/100* ({pct:.0f}% complete)\n"
-        f"🃏 Hand Cards: *{hand_count}*\n"
-        f"✨ Spell Cards: *{spell_count}*\n"
-        f"⚔️ PvP W/L: *{p['wins']}/{p['losses']}*\n"
-        f"📦 Total Collected: *{p['total_cards_collected']}*\n"
-        f"🛡️ Status: *{shield}*\n\n"
+        f"👤 {p['username']}\n\n"
+        f"💰 Jenny: {p['jenny']:,}\n"
+        f"📚 Binder: {binder_count}/100 ({pct:.0f}% complete)\n"
+        f"🃏 Hand Cards: {hand_count}\n"
+        f"✨ Spell Cards: {spell_count}\n"
+        f"⚔️ PvP W/L: {p['wins']}/{p['losses']}\n"
+        f"📦 Total Collected: {p['total_cards_collected']}\n"
+        f"🛡️ Status: {shield}\n\n"
         f"{'🏆 GAME COMPLETE! You win!' if binder_count == 100 else f'📊 Progress: {binder_count}/100 cards in binder'}"
     )
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text)
 
 # ─── /jenny ───────────────────────────────────────────────────────────────────
 
@@ -239,19 +239,19 @@ def cmd_cards(message):
     uid = message.from_user.id
     hand = get_hand_cards(uid)
     if not hand:
-        bot.reply_to(message, "🃏 Your hand is empty! Use /drawcard to get cards.", parse_mode='Markdown')
+        bot.reply_to(message, "🃏 Your hand is empty! Use /drawcard to get cards.")
         return
 
-    lines = ["🃏 *Your Hand Cards* (can be stolen!)\n"]
+    lines = ["🃏 Your Hand Cards (can be stolen!)\n"]
     for card_id, qty in hand:
         c = NUMBERED_CARDS[card_id]
         r = RARITY_EMOJI[c['rarity']]
-        line = f"{r} #{card_id:03d} {c['emoji']} *{c['name']}* x{qty}"
+        line = f"{r} #{card_id:03d} {c['emoji']} {c['name']} x{qty}"
         lines.append(line)
 
     lines.append(f"\n📊 Total: {sum(q for _,q in hand)} cards")
     lines.append("💡 Use /addtobinder <card_id> to lock cards safely")
-    bot.send_message(message.chat.id, "\n".join(lines), parse_mode='Markdown')
+    bot.send_message(message.chat.id, "\n".join(lines))
 
 # ─── /cardinfo ────────────────────────────────────────────────────────────────
 
@@ -296,14 +296,14 @@ def cmd_binder(message):
         return
 
     # Show in pages of 25
-    lines = [f"📚 *Your Binder* — {count}/100 ({pct:.0f}%)\n"]
+    lines = [f"📚 Your Binder — {count}/100 ({pct:.0f}%)\n"]
     for card_id in binder:
         c = NUMBERED_CARDS[card_id]
         r = RARITY_EMOJI[c['rarity']]
         lines.append(f"{r} #{card_id:03d} {c['emoji']} {c['name']}")
 
     if count == 100:
-        lines.append("\n🏆 *BINDER COMPLETE! YOU WIN THE GAME!* 🏆")
+        lines.append("\n🏆 BINDER COMPLETE! YOU WIN THE GAME! 🏆")
     else:
         missing = 100 - count
         lines.append(f"\n❌ Missing: {missing} cards to complete")
@@ -312,9 +312,9 @@ def cmd_binder(message):
     # Split if too long
     if len(text) > 4000:
         for i in range(0, len(lines), 30):
-            bot.send_message(message.chat.id, "\n".join(lines[i:i+30]), parse_mode='Markdown')
+            bot.send_message(message.chat.id, "\n".join(lines[i:i+30]))
     else:
-        bot.send_message(message.chat.id, text, parse_mode='Markdown')
+        bot.send_message(message.chat.id, text)
 
 # ─── /addtobinder ─────────────────────────────────────────────────────────────
 
@@ -374,11 +374,11 @@ def cmd_spells(message):
         bot.reply_to(message, "✨ You have no spell cards!\nBuy them at /shop or earn from /quest")
         return
 
-    lines = ["✨ *Your Spell Cards*\n"]
+    lines = ["✨ Your Spell Cards\n"]
     for spell_id, qty in spells:
         s = SPELL_CARDS[spell_id]
-        lines.append(f"{s['emoji']} *{s['name']}* x{qty}\n   _{s['desc']}_\n   Use: `/usespell {spell_id}`\n")
-    bot.send_message(message.chat.id, "\n".join(lines), parse_mode='Markdown')
+        lines.append(f"{s['emoji']} {s['name']} x{qty}\n   {s['desc']}\n   Use: /usespell {spell_id}\n")
+    bot.send_message(message.chat.id, "\n".join(lines))
 
 # ─── /usespell ────────────────────────────────────────────────────────────────
 
@@ -394,11 +394,11 @@ def cmd_usespell(message):
     spell_id = parts[1].lower()
 
     if spell_id not in SPELL_CARDS:
-        bot.reply_to(message, f"❌ Unknown spell: `{spell_id}`", parse_mode='Markdown')
+        bot.reply_to(message, f"❌ Unknown spell: {spell_id}")
         return
 
     if not has_spell(uid, spell_id):
-        bot.reply_to(message, f"❌ You don't have a *{SPELL_CARDS[spell_id]['name']}* spell card.\nBuy at /shop", parse_mode='Markdown')
+        bot.reply_to(message, f"❌ You don't have a {SPELL_CARDS[spell_id]['name']} spell card.\nBuy at /shop")
         return
 
     # ── GAIN ──
@@ -411,7 +411,7 @@ def cmd_usespell(message):
         c = NUMBERED_CARDS[card_id]
         r = RARITY_EMOJI[c['rarity']]
         _check_quest_completion(uid, "use_spell", message.chat.id)
-        bot.reply_to(message, f"🎁 *Gain* cast!\n\nYou received: {r} {c['emoji']} *{c['name']}* [#{card_id}]", parse_mode='Markdown')
+        bot.reply_to(message, f"🎁 Gain cast!\n\nYou received: {r} {c['emoji']} {c['name']} [#{card_id}]")
 
     # ── PROTECT ──
     elif spell_id == "protect":
@@ -419,7 +419,7 @@ def cmd_usespell(message):
         remove_spell(uid, spell_id)
         increment_quest(uid, "use_spell", 1)
         _check_quest_completion(uid, "use_spell", message.chat.id)
-        bot.reply_to(message, "🔒 *Protect* activated!\nYour hand cards are safe from theft for *24 hours!*", parse_mode='Markdown')
+        bot.reply_to(message, "🔒 Protect activated!\nYour hand cards are safe from theft for 24 hours!")
 
     # ── TRANSFORM ──
     elif spell_id == "transform":
@@ -444,7 +444,7 @@ def cmd_usespell(message):
         increment_quest(uid, "use_spell", 1)
         c = NUMBERED_CARDS[new_card]
         _check_quest_completion(uid, "use_spell", message.chat.id)
-        bot.reply_to(message, f"✨ *Transform* cast!\n3 Commons → 🔵 {c['emoji']} *{c['name']}* [Rare #{new_card}]", parse_mode='Markdown')
+        bot.reply_to(message, f"✨ Transform cast!\n3 Commons → 🔵 {c['emoji']} {c['name']} [Rare #{new_card}]")
 
     # ── RECOVER ──
     elif spell_id == "recover":
@@ -457,7 +457,7 @@ def cmd_usespell(message):
         increment_quest(uid, "use_spell", 1)
         c = NUMBERED_CARDS[last]
         _check_quest_completion(uid, "use_spell", message.chat.id)
-        bot.reply_to(message, f"💊 *Recover* cast!\nRetrieved: {c['emoji']} *{c['name']}* [#{last}]", parse_mode='Markdown')
+        bot.reply_to(message, f"💊 Recover cast!\nRetrieved: {c['emoji']} {c['name']} [#{last}]")
 
     # ── LOTTERY ──
     elif spell_id == "lottery":
@@ -471,18 +471,18 @@ def cmd_usespell(message):
             add_hand_card(uid, card_id)
             c = NUMBERED_CARDS[card_id]
             r = RARITY_EMOJI[c['rarity']]
-            msg = f"🎰 *LOTTERY JACKPOT!* 🎉\n{r} {c['emoji']} *{c['name']}* landed on you!"
+            msg = f"🎰 LOTTERY JACKPOT! 🎉\n{r} {c['emoji']} {c['name']} landed on you!"
         elif roll < 0.40:
             jenny = random.randint(500, 2000)
             update_jenny(uid, jenny)
-            msg = f"🎰 *Lottery* — Lucky!\nYou won *{jenny:,} Jenny!* 💰"
+            msg = f"🎰 Lottery — Lucky!\nYou won {jenny:,} Jenny! 💰"
         elif roll < 0.65:
             card_id = draw_random_card()
             add_hand_card(uid, card_id)
             c = NUMBERED_CARDS[card_id]
-            msg = f"🎰 *Lottery* — A card!\n{c['emoji']} *{c['name']}* appeared!"
+            msg = f"🎰 Lottery — A card!\n{c['emoji']} {c['name']} appeared!"
         elif roll < 0.80:
-            msg = "🎰 *Lottery* — Nothing happened... (fizzle)"
+            msg = "🎰 Lottery — Nothing happened... (fizzle)"
         else:
             # Bad
             hand = get_hand_cards(uid)
@@ -491,13 +491,13 @@ def cmd_usespell(message):
                 remove_hand_card(uid, cid)
                 set_last_discarded(uid, cid)
                 c = NUMBERED_CARDS[cid]
-                msg = f"🎰 *Lottery* — Backfired! 💀\nYou lost {c['emoji']} *{c['name']}*!"
+                msg = f"🎰 Lottery — Backfired! 💀\nYou lost {c['emoji']} {c['name']}!"
             else:
                 jenny_lost = random.randint(100, 500)
                 update_jenny(uid, -jenny_lost)
-                msg = f"🎰 *Lottery* — Backfired! 💀\nYou lost *{jenny_lost:,} Jenny!*"
+                msg = f"🎰 Lottery — Backfired! 💀\nYou lost {jenny_lost:,} Jenny!"
         _check_quest_completion(uid, "use_spell", message.chat.id)
-        bot.reply_to(message, msg, parse_mode='Markdown')
+        bot.reply_to(message, msg)
 
     # ── TARGET SPELLS (need @user) ──
     elif spell_id in ["levy", "discard", "reveal", "clone"]:
@@ -514,11 +514,11 @@ def cmd_usespell(message):
             mention = parts[2].lstrip('@')
             if len(parts) > 3:
                 extra = parts[3]
-            bot.reply_to(message, f"💡 Reply to the target player's message to use *{spell_id}* on them!", parse_mode='Markdown')
+            bot.reply_to(message, f"💡 Reply to the target player's message to use {spell_id} on them!")
             return
 
         if not target_user:
-            bot.reply_to(message, f"💡 Reply to the target player's message to use *{spell_id}*!\nExample: Reply to their message, then send `/usespell {spell_id}`", parse_mode='Markdown')
+            bot.reply_to(message, f"💡 Reply to the target player's message to use {spell_id}!\nExample: Reply to their message, then send /usespell {spell_id}")
             return
 
         target_id = target_user.id
@@ -538,17 +538,17 @@ def cmd_usespell(message):
             increment_quest(uid, "use_spell", 1)
             _check_quest_completion(uid, "use_spell", message.chat.id)
             if not binder:
-                bot.reply_to(message, f"👁️ *Reveal* cast on {t_name}!\nTheir binder is empty.")
+                bot.reply_to(message, f"👁️ Reveal cast on {t_name}!\nTheir binder is empty.")
             else:
-                lines = [f"👁️ *Reveal* — {t_name}'s Binder ({len(binder)}/100)\n"]
+                lines = [f"👁️ Reveal — {t_name}'s Binder ({len(binder)}/100)\n"]
                 for cid in binder:
                     c = NUMBERED_CARDS[cid]
                     lines.append(f"{RARITY_EMOJI[c['rarity']]} #{cid:03d} {c['name']}")
-                bot.send_message(message.chat.id, "\n".join(lines), parse_mode='Markdown')
+                bot.send_message(message.chat.id, "\n".join(lines))
 
         elif spell_id == "discard":
             if is_protected(target_id):
-                bot.reply_to(message, f"🔒 {t_name} is *protected!* Discard failed.", parse_mode='Markdown')
+                bot.reply_to(message, f"🔒 {t_name} is protected! Discard failed.")
                 return
             t_hand = get_hand_cards(target_id)
             if not t_hand:
@@ -561,14 +561,14 @@ def cmd_usespell(message):
             increment_quest(uid, "use_spell", 1)
             c = NUMBERED_CARDS[cid]
             _check_quest_completion(uid, "use_spell", message.chat.id)
-            bot.reply_to(message, f"🗑️ *Discard* cast on {t_name}!\nForced them to discard: {c['emoji']} *{c['name']}*", parse_mode='Markdown')
+            bot.reply_to(message, f"🗑️ Discard cast on {t_name}!\nForced them to discard: {c['emoji']} {c['name']}")
             try:
-                bot.send_message(target_id, f"🗑️ *Discard* spell used on you by {uname(message.from_user)}!\nYou lost: {c['emoji']} *{c['name']}*\nUse /usespell recover to get it back!", parse_mode='Markdown')
+                bot.send_message(target_id, f"🗑️ Discard spell used on you by {uname(message.from_user)}!\nYou lost: {c['emoji']} {c['name']}\nUse /usespell recover to get it back!")
             except: pass
 
         elif spell_id == "levy":
             if not extra or not extra.isdigit():
-                bot.reply_to(message, f"Usage: Reply to target, then\n`/usespell levy <card_id>`", parse_mode='Markdown')
+                bot.reply_to(message, "Usage: Reply to target, then\n/usespell levy <card_id>")
                 return
             cid = int(extra)
             if cid not in NUMBERED_CARDS:
@@ -578,7 +578,7 @@ def cmd_usespell(message):
                 bot.reply_to(message, f"🔒 Card #{cid:03d} is in {t_name}'s binder — it's protected!")
                 return
             if is_protected(target_id):
-                bot.reply_to(message, f"🔒 {t_name} is protected! Levy failed.", parse_mode='Markdown')
+                bot.reply_to(message, f"🔒 {t_name} is protected! Levy failed.")
                 return
             if not has_hand_card(target_id, cid):
                 bot.reply_to(message, f"❌ {t_name} doesn't have Card #{cid:03d} in their hand.")
@@ -589,14 +589,14 @@ def cmd_usespell(message):
             increment_quest(uid, "use_spell", 1)
             c = NUMBERED_CARDS[cid]
             _check_quest_completion(uid, "use_spell", message.chat.id)
-            bot.reply_to(message, f"🎯 *Levy* success!\nStole {c['emoji']} *{c['name']}* from {t_name}!", parse_mode='Markdown')
+            bot.reply_to(message, f"🎯 Levy success!\nStole {c['emoji']} {c['name']} from {t_name}!")
             try:
-                bot.send_message(target_id, f"🎯 *Levy* spell! {uname(message.from_user)} stole your *{c['name']}*!\nUse /protect to prevent future theft.", parse_mode='Markdown')
+                bot.send_message(target_id, f"🎯 Levy spell! {uname(message.from_user)} stole your {c['name']}!\nUse /protect to prevent future theft.")
             except: pass
 
         elif spell_id == "clone":
             if not extra or not extra.isdigit():
-                bot.reply_to(message, "Usage: `/usespell clone <card_id_you_own>`", parse_mode='Markdown')
+                bot.reply_to(message, "Usage: /usespell clone <card_id_you_own>")
                 return
             cid = int(extra)
             if not has_hand_card(uid, cid) and not in_binder(uid, cid):
@@ -607,7 +607,7 @@ def cmd_usespell(message):
             increment_quest(uid, "use_spell", 1)
             c = NUMBERED_CARDS[cid]
             _check_quest_completion(uid, "use_spell", message.chat.id)
-            bot.reply_to(message, f"👥 *Clone* cast!\nDuplicated: {c['emoji']} *{c['name']}*\nA copy added to your hand!", parse_mode='Markdown')
+            bot.reply_to(message, f"👥 Clone cast!\nDuplicated: {c['emoji']} {c['name']}\nA copy added to your hand!")
 
     else:
         bot.reply_to(message, "❌ Unknown spell usage.")
@@ -645,21 +645,21 @@ def cmd_sell(message):
     new_jenny = update_jenny(uid, price)
     r = RARITY_EMOJI[c['rarity']]
     bot.reply_to(message, (
-        f"💰 Sold {r} {c['emoji']} *{c['name']}*\n"
+        f"💰 Sold {r} {c['emoji']} {c['name']}\n"
         f"+{price:,} Jenny\n"
         f"Balance: {new_jenny:,} Jenny"
-    ), parse_mode='Markdown')
+    ))
 
 # ─── /shop ────────────────────────────────────────────────────────────────────
 
 @bot.message_handler(commands=['shop'])
 def cmd_shop(message):
-    lines = ["🛒 *Spell Card Shop*\n"]
+    lines = ["🛒 Spell Card Shop\n"]
     for spell_id, s in SPELL_CARDS.items():
         cost = s['cost']
         cost_str = f"{cost:,} Jenny" if cost > 0 else "FREE (via transform)"
-        lines.append(f"{s['emoji']} *{s['name']}* — {cost_str}\n   _{s['desc']}_\n   Buy: `/buy {spell_id}`\n")
-    bot.send_message(message.chat.id, "\n".join(lines), parse_mode='Markdown')
+        lines.append(f"{s['emoji']} {s['name']} — {cost_str}\n   {s['desc']}\n   Buy: /buy {spell_id}\n")
+    bot.send_message(message.chat.id, "\n".join(lines))
 
 @bot.message_handler(commands=['buy'])
 def cmd_buy(message):
@@ -691,15 +691,15 @@ def cmd_buy(message):
 def cmd_quest(message):
     if not check_registered(message): return
     uid = message.from_user.id
-    lines = ["📋 *Daily Quests*\n"]
+    lines = ["📋 Daily Quests\n"]
     for q in DAILY_QUESTS:
         row = get_quest_progress(uid, q['id'])
         progress = row[0] if row else 0
         completed = row[1] if row else False
-        status = "✅" if completed else f"{progress}/{q['target']}"
+        status = "✅ DONE" if completed else f"{progress}/{q['target']}"
         reward = f"+{q['jenny']} Jenny & {SPELL_CARDS[q['spell']]['emoji']} {q['spell'].title()} spell"
-        lines.append(f"{'~~' if completed else ''}{q['name']} [{status}]\n   {q['desc']}\n   🎁 {reward}{'~~' if completed else ''}\n")
-    bot.send_message(message.chat.id, "\n".join(lines), parse_mode='Markdown')
+        lines.append(f"{q['name']} [{status}]\n   {q['desc']}\n   🎁 {reward}\n")
+    bot.send_message(message.chat.id, "\n".join(lines))
 
 def _check_quest_completion(uid, quest_type, chat_id):
     for q in DAILY_QUESTS:
@@ -748,13 +748,13 @@ def cmd_challenge(message):
     cid = create_pvp_challenge(uid, target.id, c_name, t_name)
 
     text = (
-        f"⚔️ *PvP Challenge!*\n\n"
+        f"⚔️ PvP Challenge!\n\n"
         f"{c_name} challenges {t_name} to battle!\n\n"
-        f"🏆 *Winner steals one random hand card from loser!*\n\n"
-        f"{t_name}: Reply with `/accept {c_name.lstrip('@')}` to accept!\n"
+        f"🏆 Winner steals one random hand card from loser!\n\n"
+        f"{t_name}: Reply with /accept {c_name.lstrip('@')} to accept!\n"
         f"⏳ Expires in 10 minutes | Challenge ID: #{cid}"
     )
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text)
 
 @bot.message_handler(commands=['accept'])
 def cmd_accept(message):
@@ -817,7 +817,7 @@ def cmd_accept(message):
         remove_hand_card(loser_id, cid)
         add_hand_card(winner_id, cid)
         c = NUMBERED_CARDS[cid]
-        stolen_text = f"\n🎯 {winner_name} stole *{c['emoji']} {c['name']}* from {loser_name}!"
+        stolen_text = f"\n🎯 {winner_name} stole {c['emoji']} {c['name']} from {loser_name}!"
     elif is_protected(loser_id):
         stolen_text = f"\n🔒 {loser_name} is protected — no card stolen!"
     else:
@@ -832,15 +832,15 @@ def cmd_accept(message):
     update_jenny(winner_id, jenny_prize)
 
     text = (
-        f"⚔️ *PvP Battle Result!*\n\n"
-        f"🏆 *{winner_name} WINS!*\n"
+        f"⚔️ PvP Battle Result!\n\n"
+        f"🏆 {winner_name} WINS!\n"
         f"💀 {loser_name} defeated\n\n"
         f"Power: {winner_name} [{int(roll_uid if winner_id == uid else roll_c)}] vs "
         f"{loser_name} [{int(roll_c if winner_id == uid else roll_uid)}]\n"
         f"{stolen_text}\n"
         f"💰 +{jenny_prize} Jenny to winner!"
     )
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text)
 
 def _pvp_power(user_id):
     binder = get_binder_count(user_id)
@@ -868,10 +868,10 @@ def boss_hp_bar(hp, max_hp):
 def boss_message_text(b, boss_id, hp, max_hp, fight_id):
     bar, pct = boss_hp_bar(hp, max_hp)
     return (
-        f"👹 *{b['name']}* {b['emoji']}\n"
-        f"_{b['description']}_\n\n"
-        f"❤️ HP: *{hp:,}/{max_hp:,}*\n"
-        f"`[{bar}]` {pct:.1f}%\n\n"
+        f"👹 {b['name']} {b['emoji']}\n"
+        f"{b['description']}\n\n"
+        f"❤️ HP: {hp:,}/{max_hp:,}\n"
+        f"[{bar}] {pct:.1f}%\n\n"
         f"⚔️ ATK: {b['atk']} | 🛡️ DEF: {b['def']}\n\n"
         f"💰 Reward: {b['jenny_reward']:,} Jenny + Epic Cards!\n"
         f"👥 Everyone can join — pick your card and attack!"
@@ -885,7 +885,7 @@ def attack_button(fight_id):
 def _give_boss_rewards(fight_id, b, chat_id):
     participants = get_boss_participants(fight_id)
     total_dmg = sum(d for _, _, d in participants)
-    result = [f"💀 *{b['name']}* DEFEATED! {b['emoji']}\n\n🏆 *Battle Results:*\n"]
+    result = [f"💀 {b['name']} DEFEATED! {b['emoji']}\n\n🏆 Battle Results:\n"]
     for i, (p_uid, p_name, p_dmg) in enumerate(participants, 1):
         share = (p_dmg / total_dmg) if total_dmg > 0 else 0
         jenny_earn = int(b['jenny_reward'] * share)
@@ -894,8 +894,8 @@ def _give_boss_rewards(fight_id, b, chat_id):
         add_hand_card(p_uid, reward_card)
         rc = NUMBERED_CARDS[reward_card]
         r = RARITY_EMOJI[rc['rarity']]
-        result.append(f"{i}. *{p_name}* — {p_dmg:,} dmg\n   +{jenny_earn:,} Jenny | {r} {rc['name']}")
-    bot.send_message(chat_id, "\n".join(result), parse_mode='Markdown')
+        result.append(f"{i}. {p_name} — {p_dmg:,} dmg\n   +{jenny_earn:,} Jenny | {r} {rc['name']}")
+    bot.send_message(chat_id, "\n".join(result))
 
 # ─── /boss ────────────────────────────────────────────────────────────────────
 
@@ -909,7 +909,7 @@ def cmd_boss(message):
         fight_id, boss_id, hp, max_hp, msg_id = active
         b = BOSSES[boss_id]
         text = boss_message_text(b, boss_id, hp, max_hp, fight_id)
-        bot.send_message(chat_id, text, parse_mode='Markdown', reply_markup=attack_button(fight_id))
+        bot.send_message(chat_id, text, reply_markup=attack_button(fight_id))
     else:
         markup = types.InlineKeyboardMarkup(row_width=2)
         for bid, b in BOSSES.items():
@@ -917,7 +917,7 @@ def cmd_boss(message):
                 f"{b['emoji']} {b['name']} (HP:{b['max_hp']:,})",
                 callback_data=f"summon_{bid}"
             ))
-        bot.send_message(chat_id, "👹 *Summon a Boss!*\n\nChoose your enemy:", parse_mode='Markdown', reply_markup=markup)
+        bot.send_message(chat_id, "👹 Summon a Boss!\n\nChoose your enemy:", reply_markup=markup)
 
 @bot.message_handler(commands=['summon'])
 def cmd_summon(message):
@@ -943,7 +943,7 @@ def _do_summon(chat_id, boss_id, message=None):
     b = BOSSES[boss_id]
     fight_id = create_boss_fight(chat_id, boss_id, b['max_hp'])
     text = boss_message_text(b, boss_id, b['max_hp'], b['max_hp'], fight_id)
-    sent = bot.send_message(chat_id, f"🚨 *BOSS APPEARED!* 🚨\n\n" + text, parse_mode='Markdown', reply_markup=attack_button(fight_id))
+    sent = bot.send_message(chat_id, "🚨 BOSS APPEARED! 🚨\n\n" + text, reply_markup=attack_button(fight_id))
     from database import update_boss_message_id
     update_boss_message_id(fight_id, sent.message_id)
 
@@ -1070,12 +1070,12 @@ def cb_boss_attack(call):
     if new_hp == 0:
         # Boss defeated — edit final message
         result_text = (
-            f"💀 *{b['name']}* DEFEATED! {b['emoji']}\n\n"
-            f"Final blow by *{uname(call.from_user)}* with {r} *{c['name']}*!\n"
-            f"⚔️ *-{base_dmg:,} HP!*{bonus_text}"
+            f"💀 {b['name']} DEFEATED! {b['emoji']}\n\n"
+            f"Final blow by {uname(call.from_user)} with {r} {c['name']}!\n"
+            f"⚔️ -{base_dmg:,} HP!{bonus_text}"
         )
         try:
-            bot.edit_message_text(result_text, chat_id, call.message.message_id, parse_mode='Markdown')
+            bot.edit_message_text(result_text, chat_id, call.message.message_id)
         except: pass
         _give_boss_rewards(fight_id, b, chat_id)
         return
@@ -1088,7 +1088,7 @@ def cb_boss_attack(call):
     dodged = random.random() < dodge_chance
 
     if dodged:
-        counter_text = f"\n🌀 *{c['name']}* dodged the boss's counterattack!"
+        counter_text = f"\n🌀 {c['name']} dodged the boss's counterattack!"
     elif random.random() < 0.75:
         counter_dmg = max(15, b['atk'] - (c['def'] // 2) + random.randint(0, 40))
         if c['ability_effect'] == 'shield':
@@ -1101,30 +1101,30 @@ def cb_boss_attack(call):
             remove_hand_card(uid, card_id)
             set_last_discarded(uid, card_id)
             counter_text = (
-                f"\n💥 *{b['name']}* counterattacks!\n"
-                f"💔 Your *{c['name']}* took {counter_dmg} dmg and was *destroyed!*\n"
+                f"\n💥 {b['name']} counterattacks!\n"
+                f"💔 Your {c['name']} took {counter_dmg} dmg and was destroyed!\n"
                 f"💡 Use /usespell recover to try get it back."
             )
         else:
             jenny_loss = min(get_jenny(uid), counter_dmg * 4)
             update_jenny(uid, -jenny_loss)
             counter_text = (
-                f"\n💥 *{b['name']}* counterattacks for {counter_dmg} dmg!\n"
-                f"💰 You lost *{jenny_loss:,} Jenny* in repairs!"
+                f"\n💥 {b['name']} counterattacks for {counter_dmg} dmg!\n"
+                f"💰 You lost {jenny_loss:,} Jenny in repairs!"
             )
 
     bar, pct = boss_hp_bar(new_hp, max_hp)
     new_text = (
-        f"👹 *{b['name']}* {b['emoji']}\n"
-        f"❤️ HP: *{new_hp:,}/{max_hp:,}*\n"
-        f"`[{bar}]` {pct:.1f}%\n\n"
-        f"⚔️{crit_text} *{uname(call.from_user)}* dealt *-{base_dmg:,} HP!*\n"
-        f"{r} {c['emoji']} *{c['name']}* — {c['ability']}{bonus_text}"
+        f"👹 {b['name']} {b['emoji']}\n"
+        f"❤️ HP: {new_hp:,}/{max_hp:,}\n"
+        f"[{bar}] {pct:.1f}%\n\n"
+        f"⚔️{crit_text} {uname(call.from_user)} dealt -{base_dmg:,} HP!\n"
+        f"{r} {c['emoji']} {c['name']} — {c['ability']}{bonus_text}"
         f"{counter_text}\n\n"
         f"💰 Reward: {b['jenny_reward']:,} Jenny + Cards!"
     )
     try:
-        bot.edit_message_text(new_text, chat_id, msg_id, parse_mode='Markdown', reply_markup=attack_button(fight_id))
+        bot.edit_message_text(new_text, chat_id, msg_id, reply_markup=attack_button(fight_id))
     except: pass
     bot.answer_callback_query(call.id, f"⚔️ -{base_dmg:,} HP dealt!")
 
@@ -1144,10 +1144,10 @@ def cmd_leaderboard(message):
         bot.reply_to(message, "No players yet!")
         return
     medals = ["🥇", "🥈", "🥉"] + ["🏅"] * 7
-    lines = ["🏆 *Greed Island Leaderboard*\n"]
+    lines = ["🏆 Greed Island Leaderboard\n"]
     for i, (username, jenny, wins, binder_count) in enumerate(rows):
         lines.append(f"{medals[i]} {username} — {binder_count}/100 cards | {jenny:,}💰 | {wins}W")
-    bot.send_message(message.chat.id, "\n".join(lines), parse_mode='Markdown')
+    bot.send_message(message.chat.id, "\n".join(lines))
 
 # ─── /trade ───────────────────────────────────────────────────────────────────
 
@@ -1155,7 +1155,7 @@ def cmd_leaderboard(message):
 def cmd_trade(message):
     if not check_registered(message): return
     if not message.reply_to_message:
-        bot.reply_to(message, "💡 Reply to a player's message, then:\n`/trade <your_card_id> <want_card_id>`", parse_mode='Markdown')
+        bot.reply_to(message, "💡 Reply to a player's message, then:\n/trade <your_card_id> <want_card_id>")
         return
     parts = message.text.split()
     if len(parts) < 3:
@@ -1205,15 +1205,15 @@ def cmd_trade(message):
     s_name = uname(message.from_user)
 
     text = (
-        f"🔄 *Trade Offer!*\n\n"
+        f"🔄 Trade Offer!\n\n"
         f"{s_name} offers:\n"
-        f"{RARITY_EMOJI[offer_c['rarity']]} {offer_c['emoji']} *{offer_c['name']}* (#{offer_id})\n\n"
+        f"{RARITY_EMOJI[offer_c['rarity']]} {offer_c['emoji']} {offer_c['name']} (#{offer_id})\n\n"
         f"In exchange for:\n"
-        f"{RARITY_EMOJI[want_c['rarity']]} {want_c['emoji']} *{want_c['name']}* (#{want_id})\n\n"
-        f"{t_name}: `/accept_trade {trade_id}` to accept\n"
+        f"{RARITY_EMOJI[want_c['rarity']]} {want_c['emoji']} {want_c['name']} (#{want_id})\n\n"
+        f"{t_name}: /accept_trade {trade_id} to accept\n"
         f"Offer ID: #{trade_id}"
     )
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text)
 
 @bot.message_handler(commands=['accept_trade'])
 def cmd_accept_trade(message):
@@ -1266,10 +1266,9 @@ def cmd_accept_trade(message):
     oc = NUMBERED_CARDS[offer_id]
     wc = NUMBERED_CARDS[want_id]
     bot.send_message(message.chat.id,
-        f"✅ *Trade Complete!*\n\n"
-        f"🔄 {oc['emoji']} *{oc['name']}* ↔️ {wc['emoji']} *{wc['name']}*\n"
-        f"Successfully exchanged!",
-        parse_mode='Markdown')
+        f"✅ Trade Complete!\n\n"
+        f"🔄 {oc['emoji']} {oc['name']} ↔️ {wc['emoji']} {wc['name']}\n"
+        f"Successfully exchanged!")
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
