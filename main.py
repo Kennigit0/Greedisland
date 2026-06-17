@@ -102,13 +102,13 @@ def cmd_start(message):
     jenny = p['jenny']
 
     text = (
-        "🎮 *Welcome to GREED ISLAND!* 🎮\n\n"
+        "🎮 Welcome to GREED ISLAND! 🎮\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
         "You have been transported into the legendary Nen-based game!\n\n"
-        "🎯 *Your Mission:* Collect all *100 numbered cards* and fill your binder to complete the game!\n\n"
-        f"💰 *Starting Jenny:* {jenny:,}\n\n"
+        "🎯 Your Mission: Collect all 100 numbered cards and fill your binder to complete the game!\n\n"
+        f"💰 Starting Jenny: {jenny:,}\n\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "📖 *Quick Start:*\n"
+        "📖 Quick Start:\n"
         "• /drawcard — Draw a random card (5min cooldown)\n"
         "• /binder — View your card binder\n"
         "• /cards — View your hand cards\n"
@@ -118,9 +118,9 @@ def cmd_start(message):
         "• /boss — Fight bosses for rare cards\n"
         "• /quest — Daily quests\n"
         "• /help — Full command list\n\n"
-        "⚠️ *Remember:* Cards in your hand can be stolen! Put them in your /binder to keep them safe."
+        "⚠️ Remember: Cards in your hand can be stolen! Put them in your /binder to keep them safe."
     )
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text)
 
 # ─── /help ────────────────────────────────────────────────────────────────────
 
@@ -158,7 +158,7 @@ def cmd_help(message):
         "/accept_trade ID — Accept a trade offer\n\n"
         "Bosses: chimera_ant | phantom_troupe | hisoka | meruem"
     )
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text)
 
 # ─── /profile ─────────────────────────────────────────────────────────────────
 
@@ -196,7 +196,7 @@ def cmd_profile(message):
 def cmd_jenny(message):
     if not check_registered(message): return
     j = get_jenny(message.from_user.id)
-    bot.reply_to(message, f"💰 You have *{j:,} Jenny*", parse_mode='Markdown')
+    bot.reply_to(message, f"💰 You have {j:,} Jenny")
 
 # ─── /drawcard ────────────────────────────────────────────────────────────────
 
@@ -208,7 +208,7 @@ def cmd_drawcard(message):
     if not can:
         mins = secs // 60
         s = secs % 60
-        bot.reply_to(message, f"⏳ Draw cooldown: *{mins}m {s}s* remaining.", parse_mode='Markdown')
+        bot.reply_to(message, f"⏳ Draw cooldown: {mins}m {s}s remaining.")
         return
 
     card_id = draw_random_card()
@@ -220,16 +220,16 @@ def cmd_drawcard(message):
     increment_quest(uid, "collect", 1)
 
     text = (
-        f"🎴 *Card Drawn!*\n\n"
-        f"{r_emoji} {card['emoji']} *{card['name']}*\n"
-        f"🏷️ Rarity: *{card['rarity']}*\n"
+        f"🎴 Card Drawn!\n\n"
+        f"{r_emoji} {card['emoji']} {card['name']}\n"
+        f"🏷️ Rarity: {card['rarity']}\n"
         f"🔢 Card #{card_id:03d}\n\n"
         f"💡 Use /addtobinder {card_id} to lock it in your binder!"
     )
 
     # Check quest completions
     _check_quest_completion(uid, "collect", message.chat.id)
-    bot.send_message(message.chat.id, text, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text)
 
 # ─── /cards ───────────────────────────────────────────────────────────────────
 
@@ -268,18 +268,18 @@ def cmd_cardinfo(message):
     c = NUMBERED_CARDS[cid]
     r = RARITY_EMOJI[c['rarity']]
     text = (
-        f"{r} *Card #{cid:03d} — {c['name']}* {c['emoji']}\n"
-        f"🏷️ Rarity: *{c['rarity']}*\n\n"
-        f"━━━ *Battle Stats* ━━━\n"
-        f"⚔️ Attack:  *{c['atk']}*\n"
-        f"🛡️ Defense: *{c['def']}*\n"
-        f"⚡ Speed:   *{c['spd']}*\n"
-        f"💪 Total Power: *{c['power']}*\n\n"
-        f"━━━ *Ability* ━━━\n"
-        f"✨ *{c['ability']}*\n"
+        f"{r} Card #{cid:03d} — {c['name']} {c['emoji']}\n"
+        f"🏷️ Rarity: {c['rarity']}\n\n"
+        f"━━━ Battle Stats ━━━\n"
+        f"⚔️ Attack:  {c['atk']}\n"
+        f"🛡️ Defense: {c['def']}\n"
+        f"⚡ Speed:   {c['spd']}\n"
+        f"💪 Total Power: {c['power']}\n\n"
+        f"━━━ Ability ━━━\n"
+        f"✨ {c['ability']}\n"
         f"_{c['ability_desc']}_"
     )
-    bot.reply_to(message, text, parse_mode='Markdown')
+    bot.reply_to(message, text)
 
 # ─── /binder ─────────────────────────────────────────────────────────────────
 
@@ -342,7 +342,7 @@ def cmd_addtobinder(message):
     count = get_binder_count(uid)
     c = NUMBERED_CARDS[cid]
     _check_quest_completion(uid, "binder", message.chat.id)
-    bot.reply_to(message, f"📚 *{c['emoji']} {c['name']}* added to binder!\n📊 Binder: {count}/100", parse_mode='Markdown')
+    bot.reply_to(message, f"📚 {c['emoji']} {c['name']} added to binder!\n📊 Binder: {count}/100")
 
 # ─── /removefromBinder ────────────────────────────────────────────────────────
 
@@ -361,7 +361,7 @@ def cmd_remove_binder(message):
     remove_binder_card(uid, cid)
     add_hand_card(uid, cid)
     c = NUMBERED_CARDS[cid]
-    bot.reply_to(message, f"↩️ *{c['name']}* moved back to your hand.\n⚠️ It can now be stolen!", parse_mode='Markdown')
+    bot.reply_to(message, f"↩️ {c['name']} moved back to your hand.\n⚠️ It can now be stolen!")
 
 # ─── /spells ─────────────────────────────────────────────────────────────────
 
@@ -674,16 +674,16 @@ def cmd_buy(message):
         return
     s = SPELL_CARDS[spell_id]
     if s['cost'] == 0:
-        bot.reply_to(message, f"❌ *{s['name']}* can't be bought — earn it via /usespell transform", parse_mode='Markdown')
+        bot.reply_to(message, f"❌ {s['name']} can't be bought — earn it via /usespell transform")
         return
     uid = message.from_user.id
     jenny = get_jenny(uid)
     if jenny < s['cost']:
-        bot.reply_to(message, f"❌ Not enough Jenny!\nNeed: *{s['cost']:,}* | Have: *{jenny:,}*", parse_mode='Markdown')
+        bot.reply_to(message, f"❌ Not enough Jenny!\nNeed: {s['cost']:,} | Have: {jenny:,}")
         return
     update_jenny(uid, -s['cost'])
     add_spell(uid, spell_id)
-    bot.reply_to(message, f"✅ Bought {s['emoji']} *{s['name']}*!\n💰 Jenny left: {jenny - s['cost']:,}", parse_mode='Markdown')
+    bot.reply_to(message, f"✅ Bought {s['emoji']} {s['name']}!\n💰 Jenny left: {jenny - s['cost']:,}")
 
 # ─── /quest ───────────────────────────────────────────────────────────────────
 
@@ -715,8 +715,8 @@ def _check_quest_completion(uid, quest_type, chat_id):
             add_spell(uid, q['spell'])
             s = SPELL_CARDS[q['spell']]
             bot.send_message(chat_id,
-                f"🎉 *Quest Complete!* — {q['name']}\n💰 +{q['jenny']:,} Jenny\n{s['emoji']} +1 {s['name']} spell!",
-                parse_mode='Markdown')
+                f"🎉 Quest Complete! — {q['name']}\n💰 +{q['jenny']:,} Jenny\n{s['emoji']} +1 {s['name']} spell!",
+                )
 
 # ─── /challenge ───────────────────────────────────────────────────────────────
 
@@ -981,11 +981,11 @@ def _show_card_picker(uid, chat_id, fight_id, message=None, call=None):
         markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"boss_attack_{fight_id}_{cid}"))
     markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_attack"))
 
-    txt = "🃏 *Choose your card to attack with:*\n⚠️ The boss may counterattack — your card could get hurt!"
+    txt = "🃏 Choose your card to attack with:\n⚠️ The boss may counterattack — your card could get hurt!"
     if call:
-        bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
+        bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, reply_markup=markup)
     elif message:
-        bot.reply_to(message, txt, parse_mode='Markdown', reply_markup=markup)
+        bot.reply_to(message, txt, reply_markup=markup)
 
 # ─── BOSS CALLBACKS ───────────────────────────────────────────────────────────
 
@@ -1043,28 +1043,28 @@ def cb_boss_attack(call):
     bonus_text = ""
     if ability == 'pierce':
         base_dmg = int(c['atk'] * 1.3)
-        bonus_text = "\n🗡️ *Pierce!* Ignored defense!"
+        bonus_text = "\n🗡️ Pierce! Ignored defense!"
     elif ability == 'crit' and random.random() < 0.3:
         base_dmg = int(base_dmg * 2)
-        bonus_text = "\n💥 *Ability Crit!* 2x damage!"
+        bonus_text = "\n💥 Ability Crit! 2x damage!"
     elif ability == 'truedmg':
         base_dmg = c['atk']
-        bonus_text = "\n✨ *True Damage!* DEF ignored!"
+        bonus_text = "\n✨ True Damage! DEF ignored!"
     elif ability == 'double':
         base_dmg = int(base_dmg * 1.8)
-        bonus_text = "\n👥 *Double Hit!*"
+        bonus_text = "\n👥 Double Hit!"
     elif ability == 'triple':
         base_dmg = int(base_dmg * 2.2)
-        bonus_text = "\n🎯 *Triple Strike!*"
+        bonus_text = "\n🎯 Triple Strike!"
     elif ability == 'execute' and hp < (max_hp * 0.2) and random.random() < 0.25:
         base_dmg = hp  # instant kill
-        bonus_text = "\n💀 *EXECUTE!* Finishing blow!"
+        bonus_text = "\n💀 EXECUTE! Finishing blow!"
 
     new_hp = damage_boss(fight_id, uid, uname(call.from_user), base_dmg)
     increment_quest(uid, "boss_dmg", base_dmg)
     _check_quest_completion(uid, "boss_dmg", chat_id)
 
-    crit_text = " 💥 *CRITICAL!*" if crit else ""
+    crit_text = " 💥 CRITICAL!" if crit else ""
     r = RARITY_EMOJI[c['rarity']]
 
     if new_hp == 0:
