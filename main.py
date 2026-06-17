@@ -225,10 +225,16 @@ def cmd_cardinfo(message):
     c = NUMBERED_CARDS[cid]
     r = RARITY_EMOJI[c['rarity']]
     text = (
-        f"{r} *Card #{cid:03d}*\n\n"
-        f"{c['emoji']} *{c['name']}*\n"
-        f"🏷️ Rarity: *{c['rarity']}*\n"
-        f"⚡ Power: *{c['power']}*"
+        f"{r} *Card #{cid:03d} — {c['name']}* {c['emoji']}\n"
+        f"🏷️ Rarity: *{c['rarity']}*\n\n"
+        f"━━━ *Battle Stats* ━━━\n"
+        f"⚔️ Attack:  *{c['atk']}*\n"
+        f"🛡️ Defense: *{c['def']}*\n"
+        f"⚡ Speed:   *{c['spd']}*\n"
+        f"💪 Total Power: *{c['power']}*\n\n"
+        f"━━━ *Ability* ━━━\n"
+        f"✨ *{c['ability']}*\n"
+        f"_{c['ability_desc']}_"
     )
     bot.reply_to(message, text, parse_mode='Markdown')
 
@@ -761,6 +767,15 @@ def _pvp_power(user_id):
     hand_power = sum(NUMBERED_CARDS[cid]['power'] * qty for cid, qty in hand)
     return (binder * 10) + hand_power + random.randint(1, 50)
 
+def _get_best_card(user_id):
+    """Get the highest power card from hand or binder"""
+    hand = get_hand_cards(user_id)
+    binder = get_binder_cards(user_id)
+    all_cards = [cid for cid, _ in hand] + binder
+    if not all_cards:
+        return None
+    return max(all_cards, key=lambda cid: NUMBERED_CARDS[cid]['power'])
+
 # ─── /boss ────────────────────────────────────────────────────────────────────
 
 @bot.message_handler(commands=['boss'])
@@ -784,13 +799,17 @@ def cmd_boss(message):
     else:
         lines = ["👹 *Summon a Boss!*\n\nChoose your enemy:\n"]
         for boss_id, b in BOSSES.items():
-            lines.append(f"{b['emoji']} *{b['name']}*\n   ❤️ HP: {b['max_hp']:,} | 💰 {b['jenny_reward']:,} Jenny\n   /summon_{boss_id}\n")
+            lines.append(f"{b['emoji']} *{b['name']}*\n   ❤️ HP: {b['max_hp']:,} | 💰 {b['jenny_reward']:,} Jenny\n   `/summon {boss_id.replace('_', ' ')}`\n   Command: `/summon {boss_id}`\n")
         bot.send_message(chat_id, "\n".join(lines), parse_mode='Markdown')
 
-@bot.message_handler(func=lambda m: m.text and m.text.startswith('/summon_'))
+@bot.message_handler(commands=['summon'])
 def cmd_summon(message):
     if not check_registered(message): return
-    boss_id = message.text.split('/summon_')[1].strip().split()[0]
+    parts = message.text.split()
+    if len(parts) < 2:
+        bot.reply_to(message, "Usage: `/summon <boss_name>`\n\nBosses:\n`chimera_ant`\n`phantom_troupe`\n`hisoka`\n`meruem`", parse_mode='Markdown')
+        return
+    boss_id = parts[1].lower()
     if boss_id not in BOSSES:
         bot.reply_to(message, "❌ Unknown boss.")
         return
