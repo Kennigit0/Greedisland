@@ -107,7 +107,7 @@ def cmd_help(message):
         "/challenge — Reply to user + challenge\n"
         "/accept — Reply to challenger + accept\n"
         "/boss — View or summon a boss\n"
-        "/summon boss\_name — Summon a boss\n"
+        "/summon boss_name — Summon a boss\n"
         "/attack — Attack the active boss\n\n"
         "━━ 📊 STATS ━━\n"
         "/profile — Your full stats\n"
@@ -115,9 +115,9 @@ def cmd_help(message):
         "/leaderboard — Top players\n"
         "/jenny — Check your Jenny\n\n"
         "━━ ECONOMY ━━\n"
-        "/trade your\_card want\_card — Offer a trade\n"
-        "/accept\_trade ID — Accept a trade offer\n\n"
-        "Bosses: chimera\_ant | phantom\_troupe | hisoka | meruem"
+        "/trade your_card want_card — Offer a trade\n"
+        "/accept_trade ID — Accept a trade offer\n\n"
+        "Bosses: chimera_ant | phantom_troupe | hisoka | meruem"
     )
     bot.send_message(message.chat.id, text, parse_mode='Markdown')
 
