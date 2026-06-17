@@ -88,32 +88,36 @@ def cmd_start(message):
 @bot.message_handler(commands=['help'])
 def cmd_help(message):
     text = (
-        "📖 *GREED ISLAND — Command List*\n\n"
+        "📖 GREED ISLAND — Command List\n\n"
         "━━ 🃏 CARDS ━━\n"
         "/drawcard — Draw a random card (5min cooldown)\n"
         "/cards — View your hand cards\n"
-        "/cardinfo <id> — Info about a card\n\n"
+        "/cardinfo ID — Full stats and ability of a card\n"
+        "/sell ID — Sell a hand card for Jenny\n\n"
         "━━ 📚 BINDER ━━\n"
         "/binder — View your binder progress\n"
-        "/addtobinder <id> — Lock card into binder\n"
-        "/removefromBinder <id> — Take card out of binder\n\n"
-        "━━ ✨ SPELLS ━━\n"
+        "/addtobinder ID — Lock card into binder safely\n"
+        "/removefromBinder ID — Take card back to hand\n\n"
+        "━━ SPELLS ━━\n"
         "/spells — View your spell cards\n"
-        "/usespell <spell> — Use a spell card\n"
-        "/shop — Buy spell cards with Jenny\n\n"
-        "━━ ⚔️ BATTLE ━━\n"
-        "/challenge @user — Challenge to PvP\n"
-        "/accept @challenger — Accept a PvP battle\n"
-        "/boss — View active/summon boss\n"
+        "/usespell spell — Use a spell card\n"
+        "/shop — Buy spell cards with Jenny\n"
+        "/buy spell — Buy a specific spell\n\n"
+        "━━ BATTLE ━━\n"
+        "/challenge — Reply to user + challenge\n"
+        "/accept — Reply to challenger + accept\n"
+        "/boss — View or summon a boss\n"
+        "/summon boss\_name — Summon a boss\n"
         "/attack — Attack the active boss\n\n"
         "━━ 📊 STATS ━━\n"
-        "/profile — Your stats\n"
+        "/profile — Your full stats\n"
         "/quest — Daily quests\n"
-        "/leaderboard — Top players\n\n"
-        "━━ 💱 ECONOMY ━━\n"
-        "/trade @user <your_card> <want_card> — Offer a trade\n"
-        "/accept_trade <id> — Accept a trade offer\n"
-        "/jenny — Check your Jenny\n"
+        "/leaderboard — Top players\n"
+        "/jenny — Check your Jenny\n\n"
+        "━━ ECONOMY ━━\n"
+        "/trade your\_card want\_card — Offer a trade\n"
+        "/accept\_trade ID — Accept a trade offer\n\n"
+        "Bosses: chimera\_ant | phantom\_troupe | hisoka | meruem"
     )
     bot.send_message(message.chat.id, text, parse_mode='Markdown')
 
@@ -568,6 +572,44 @@ def cmd_usespell(message):
 
     else:
         bot.reply_to(message, "❌ Unknown spell usage.")
+
+
+# ─── /sell ────────────────────────────────────────────────────────────────────
+
+SELL_PRICES = {"Common": 100, "Rare": 400, "Epic": 1200, "Legendary": 5000}
+
+@bot.message_handler(commands=['sell'])
+def cmd_sell(message):
+    if not check_registered(message): return
+    parts = message.text.split()
+    if len(parts) < 2 or not parts[1].isdigit():
+        bot.reply_to(message, (
+            "Usage: /sell <card_id>\n\n"
+            "Sell prices:\n"
+            "⚪ Common — 100 Jenny\n"
+            "🔵 Rare — 400 Jenny\n"
+            "🟣 Epic — 1,200 Jenny\n"
+            "🟡 Legendary — 5,000 Jenny"
+        ))
+        return
+    cid = int(parts[1])
+    if cid not in NUMBERED_CARDS:
+        bot.reply_to(message, "❌ Invalid card ID (1–100).")
+        return
+    uid = message.from_user.id
+    if not has_hand_card(uid, cid):
+        bot.reply_to(message, "❌ That card is not in your hand.\nCards in your binder cannot be sold.")
+        return
+    c = NUMBERED_CARDS[cid]
+    price = SELL_PRICES[c['rarity']]
+    remove_hand_card(uid, cid)
+    new_jenny = update_jenny(uid, price)
+    r = RARITY_EMOJI[c['rarity']]
+    bot.reply_to(message, (
+        f"💰 Sold {r} {c['emoji']} *{c['name']}*\n"
+        f"+{price:,} Jenny\n"
+        f"Balance: {new_jenny:,} Jenny"
+    ), parse_mode='Markdown')
 
 # ─── /shop ────────────────────────────────────────────────────────────────────
 
