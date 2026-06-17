@@ -88,8 +88,13 @@ def init_db():
             current_hp INT,
             max_hp INT,
             status TEXT DEFAULT 'active',
+            message_id BIGINT,
             started_at TIMESTAMP DEFAULT NOW()
         )
+    """)
+    # Add message_id column if it doesn't exist (migration)
+    cur.execute("""
+        ALTER TABLE gi_boss_fights ADD COLUMN IF NOT EXISTS message_id BIGINT
     """)
 
     cur.execute("""
@@ -392,21 +397,21 @@ def get_active_boss(chat_id):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT id, boss_id, current_hp, max_hp FROM gi_boss_fights
+        SELECT id, boss_id, current_hp, max_hp, message_id FROM gi_boss_fights
         WHERE chat_id = %s AND status = 'active'
         ORDER BY started_at DESC LIMIT 1
     """, (chat_id,))
     row = cur.fetchone()
     cur.close()
-    return row  # (id, boss_id, current_hp, max_hp)
+    return row  # (id, boss_id, current_hp, max_hp, message_id)
 
-def create_boss_fight(chat_id, boss_id, hp):
+def create_boss_fight(chat_id, boss_id, hp, message_id=None):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO gi_boss_fights (chat_id, boss_id, current_hp, max_hp)
-        VALUES (%s, %s, %s, %s) RETURNING id
-    """, (chat_id, boss_id, hp, hp))
+        INSERT INTO gi_boss_fights (chat_id, boss_id, current_hp, max_hp, message_id)
+        VALUES (%s, %s, %s, %s, %s) RETURNING id
+    """, (chat_id, boss_id, hp, hp, message_id))
     row = cur.fetchone()
     conn.commit()
     cur.close()
@@ -436,6 +441,13 @@ def get_boss_participants(fight_id):
     rows = cur.fetchall()
     cur.close()
     return rows
+
+def update_boss_message_id(fight_id, message_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE gi_boss_fights SET message_id = %s WHERE id = %s", (message_id, fight_id))
+    conn.commit()
+    cur.close()
 
 # ─── Leaderboard ─────────────────────────────────────────────────────────────
 

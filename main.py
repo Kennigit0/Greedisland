@@ -818,6 +818,46 @@ def _get_best_card(user_id):
         return None
     return max(all_cards, key=lambda cid: NUMBERED_CARDS[cid]['power'])
 
+# ─── BOSS HELPERS ────────────────────────────────────────────────────────────
+
+def boss_hp_bar(hp, max_hp):
+    pct = (hp / max_hp) * 100
+    filled = int(pct / 10)
+    bar = "█" * filled + "░" * (10 - filled)
+    return bar, pct
+
+def boss_message_text(b, boss_id, hp, max_hp, fight_id):
+    bar, pct = boss_hp_bar(hp, max_hp)
+    return (
+        f"👹 *{b['name']}* {b['emoji']}\n"
+        f"_{b['description']}_\n\n"
+        f"❤️ HP: *{hp:,}/{max_hp:,}*\n"
+        f"`[{bar}]` {pct:.1f}%\n\n"
+        f"⚔️ ATK: {b['atk']} | 🛡️ DEF: {b['def']}\n\n"
+        f"💰 Reward: {b['jenny_reward']:,} Jenny + Epic Cards!\n"
+        f"👥 Everyone can join — pick your card and attack!"
+    )
+
+def attack_button(fight_id):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("⚔️ Choose Card & Attack!", callback_data=f"boss_choose_{fight_id}"))
+    return markup
+
+def _give_boss_rewards(fight_id, b, chat_id):
+    participants = get_boss_participants(fight_id)
+    total_dmg = sum(d for _, _, d in participants)
+    result = [f"💀 *{b['name']}* DEFEATED! {b['emoji']}\n\n🏆 *Battle Results:*\n"]
+    for i, (p_uid, p_name, p_dmg) in enumerate(participants, 1):
+        share = (p_dmg / total_dmg) if total_dmg > 0 else 0
+        jenny_earn = int(b['jenny_reward'] * share)
+        update_jenny(p_uid, jenny_earn)
+        reward_card = random.choice(b['card_rewards'])
+        add_hand_card(p_uid, reward_card)
+        rc = NUMBERED_CARDS[reward_card]
+        r = RARITY_EMOJI[rc['rarity']]
+        result.append(f"{i}. *{p_name}* — {p_dmg:,} dmg\n   +{jenny_earn:,} Jenny | {r} {rc['name']}")
+    bot.send_message(chat_id, "\n".join(result), parse_mode='Markdown')
+
 # ─── /boss ────────────────────────────────────────────────────────────────────
 
 @bot.message_handler(commands=['boss'])
@@ -827,107 +867,202 @@ def cmd_boss(message):
     active = get_active_boss(chat_id)
 
     if active:
-        fight_id, boss_id, hp, max_hp = active
+        fight_id, boss_id, hp, max_hp, msg_id = active
         b = BOSSES[boss_id]
-        pct = (hp / max_hp) * 100
-        bar = "█" * int(pct / 10) + "░" * (10 - int(pct / 10))
-        text = (
-            f"👹 *{b['name']}* {b['emoji']}\n\n"
-            f"❤️ HP: {hp:,}/{max_hp:,}\n"
-            f"[{bar}] {pct:.1f}%\n\n"
-            f"Use /attack to fight!"
-        )
-        bot.send_message(chat_id, text, parse_mode='Markdown')
+        text = boss_message_text(b, boss_id, hp, max_hp, fight_id)
+        bot.send_message(chat_id, text, parse_mode='Markdown', reply_markup=attack_button(fight_id))
     else:
-        lines = ["👹 *Summon a Boss!*\n\nChoose your enemy:\n"]
-        for boss_id, b in BOSSES.items():
-            lines.append(f"{b['emoji']} *{b['name']}*\n   ❤️ HP: {b['max_hp']:,} | 💰 {b['jenny_reward']:,} Jenny\n   `/summon {boss_id.replace('_', ' ')}`\n   Command: `/summon {boss_id}`\n")
-        bot.send_message(chat_id, "\n".join(lines), parse_mode='Markdown')
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        for bid, b in BOSSES.items():
+            markup.add(types.InlineKeyboardButton(
+                f"{b['emoji']} {b['name']} (HP:{b['max_hp']:,})",
+                callback_data=f"summon_{bid}"
+            ))
+        bot.send_message(chat_id, "👹 *Summon a Boss!*\n\nChoose your enemy:", parse_mode='Markdown', reply_markup=markup)
 
 @bot.message_handler(commands=['summon'])
 def cmd_summon(message):
     if not check_registered(message): return
     parts = message.text.split()
     if len(parts) < 2:
-        bot.reply_to(message, "Usage: `/summon <boss_name>`\n\nBosses:\n`chimera_ant`\n`phantom_troupe`\n`hisoka`\n`meruem`", parse_mode='Markdown')
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        for bid, b in BOSSES.items():
+            markup.add(types.InlineKeyboardButton(f"{b['emoji']} {b['name']}", callback_data=f"summon_{bid}"))
+        bot.reply_to(message, "Choose a boss:", reply_markup=markup)
         return
-    boss_id = parts[1].lower()
+    boss_id = parts[1].lower().split('@')[0]
+    _do_summon(message.chat.id, boss_id, message)
+
+def _do_summon(chat_id, boss_id, message=None):
     if boss_id not in BOSSES:
-        bot.reply_to(message, "❌ Unknown boss.")
+        if message: bot.reply_to(message, "❌ Unknown boss. Try: chimera_ant, phantom_troupe, hisoka, meruem")
         return
-    chat_id = message.chat.id
-    if get_active_boss(chat_id):
-        bot.reply_to(message, "❌ A boss is already active! Use /attack to fight it.")
+    active = get_active_boss(chat_id)
+    if active:
+        if message: bot.reply_to(message, "❌ A boss is already active! Defeat it first.")
         return
     b = BOSSES[boss_id]
     fight_id = create_boss_fight(chat_id, boss_id, b['max_hp'])
-    text = (
-        f"🚨 *BOSS APPEARED!* 🚨\n\n"
-        f"{b['emoji']} *{b['name']}*\n"
-        f"_{b['description']}_\n\n"
-        f"❤️ HP: {b['max_hp']:,}\n"
-        f"💰 Rewards: {b['jenny_reward']:,} Jenny + Rare Cards!\n\n"
-        f"Use /attack to deal damage! Everyone can join!"
-    )
-    bot.send_message(chat_id, text, parse_mode='Markdown')
+    text = boss_message_text(b, boss_id, b['max_hp'], b['max_hp'], fight_id)
+    sent = bot.send_message(chat_id, f"🚨 *BOSS APPEARED!* 🚨\n\n" + text, parse_mode='Markdown', reply_markup=attack_button(fight_id))
+    from database import update_boss_message_id
+    update_boss_message_id(fight_id, sent.message_id)
 
 @bot.message_handler(commands=['attack'])
-def cmd_attack(message):
+def cmd_attack_legacy(message):
+    """Legacy /attack command — now shows card picker"""
     if not check_registered(message): return
     chat_id = message.chat.id
-    uid = message.from_user.id
     active = get_active_boss(chat_id)
     if not active:
         bot.reply_to(message, "❌ No active boss! Use /boss to summon one.")
         return
-    fight_id, boss_id, hp, max_hp = active
+    fight_id, boss_id, hp, max_hp, msg_id = active
     if hp <= 0:
-        bot.reply_to(message, "❌ The boss is already defeated!")
+        bot.reply_to(message, "❌ Boss already defeated!")
+        return
+    _show_card_picker(message.from_user.id, chat_id, fight_id, message=message)
+
+def _show_card_picker(uid, chat_id, fight_id, message=None, call=None):
+    hand = get_hand_cards(uid)
+    binder = get_binder_cards(uid)
+    all_cards = [(cid, qty, 'hand') for cid, qty in hand] + [(cid, 1, 'binder') for cid in binder]
+
+    if not all_cards:
+        txt = "❌ You have no cards! Use /drawcard first."
+        if call: bot.answer_callback_query(call.id, txt)
+        elif message: bot.reply_to(message, txt)
         return
 
-    binder_count = get_binder_count(uid)
-    base_dmg = random.randint(50, 200) + (binder_count * 5)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    # Show top 8 cards by power
+    sorted_cards = sorted(all_cards, key=lambda x: NUMBERED_CARDS[x[0]]['power'], reverse=True)[:8]
+    for cid, qty, src in sorted_cards:
+        c = NUMBERED_CARDS[cid]
+        r = RARITY_EMOJI[c['rarity']]
+        lock = "🔒" if src == 'binder' else ""
+        btn_text = f"{r}{lock} {c['name']} (ATK:{c['atk']})"
+        markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"boss_attack_{fight_id}_{cid}"))
+    markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_attack"))
+
+    txt = "🃏 *Choose your card to attack with:*"
+    if call:
+        bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
+    elif message:
+        bot.reply_to(message, txt, parse_mode='Markdown', reply_markup=markup)
+
+# ─── BOSS CALLBACKS ───────────────────────────────────────────────────────────
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('summon_'))
+def cb_summon(call):
+    if not get_player(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Use /start first!")
+        return
+    boss_id = call.data.replace('summon_', '')
+    bot.answer_callback_query(call.id, f"Summoning {BOSSES.get(boss_id, {}).get('name', '?')}...")
+    _do_summon(call.message.chat.id, boss_id)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('boss_choose_'))
+def cb_boss_choose(call):
+    if not get_player(call.from_user.id):
+        bot.answer_callback_query(call.id, "❌ Use /start first!")
+        return
+    fight_id = int(call.data.replace('boss_choose_', ''))
+    bot.answer_callback_query(call.id, "Choose your card!")
+    _show_card_picker(call.from_user.id, call.message.chat.id, fight_id, call=call)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('boss_attack_'))
+def cb_boss_attack(call):
+    uid = call.from_user.id
+    if not get_player(uid):
+        bot.answer_callback_query(call.id, "❌ Use /start first!")
+        return
+
+    parts = call.data.split('_')
+    # boss_attack_{fight_id}_{card_id}
+    fight_id = int(parts[2])
+    card_id = int(parts[3])
+    chat_id = call.message.chat.id
+
+    active = get_active_boss(chat_id)
+    if not active:
+        bot.answer_callback_query(call.id, "❌ No active boss!")
+        return
+    a_fight_id, boss_id, hp, max_hp, msg_id = active
+    if hp <= 0:
+        bot.answer_callback_query(call.id, "❌ Boss already defeated!")
+        return
+
+    c = NUMBERED_CARDS[card_id]
+    b = BOSSES[boss_id]
+
+    # Calculate damage using card ATK vs boss DEF
+    base_dmg = max(10, c['atk'] - (b['def'] // 3) + random.randint(10, 60))
     crit = random.random() < 0.20
     if crit:
-        base_dmg = int(base_dmg * 2.5)
+        base_dmg = int(base_dmg * 2.2)
 
-    new_hp = damage_boss(fight_id, uid, uname(message.from_user), base_dmg)
+    # Apply ability effects
+    ability = c['ability_effect']
+    bonus_text = ""
+    if ability == 'pierce':
+        base_dmg = int(c['atk'] * 1.3)
+        bonus_text = "\n🗡️ *Pierce!* Ignored defense!"
+    elif ability == 'crit' and random.random() < 0.3:
+        base_dmg = int(base_dmg * 2)
+        bonus_text = "\n💥 *Ability Crit!* 2x damage!"
+    elif ability == 'truedmg':
+        base_dmg = c['atk']
+        bonus_text = "\n✨ *True Damage!* DEF ignored!"
+    elif ability == 'double':
+        base_dmg = int(base_dmg * 1.8)
+        bonus_text = "\n👥 *Double Hit!*"
+    elif ability == 'triple':
+        base_dmg = int(base_dmg * 2.2)
+        bonus_text = "\n🎯 *Triple Strike!*"
+    elif ability == 'execute' and hp < (max_hp * 0.2) and random.random() < 0.25:
+        base_dmg = hp  # instant kill
+        bonus_text = "\n💀 *EXECUTE!* Finishing blow!"
+
+    new_hp = damage_boss(fight_id, uid, uname(call.from_user), base_dmg)
     increment_quest(uid, "boss_dmg", base_dmg)
     _check_quest_completion(uid, "boss_dmg", chat_id)
 
-    b = BOSSES[boss_id]
-    crit_text = " 💥 *CRITICAL HIT!*" if crit else ""
-    pct = (new_hp / max_hp) * 100
-    bar = "█" * int(pct / 10) + "░" * (10 - int(pct / 10))
+    crit_text = " 💥 *CRITICAL!*" if crit else ""
+    r = RARITY_EMOJI[c['rarity']]
 
     if new_hp == 0:
-        # Boss defeated!
-        participants = get_boss_participants(fight_id)
-        total_dmg = sum(d for _, _, d in participants)
-
-        result = [f"💀 *{b['name']}* has been defeated! {b['emoji']}\n\n🏆 *Battle Results:*\n"]
-        for i, (p_uid, p_name, p_dmg) in enumerate(participants, 1):
-            share = (p_dmg / total_dmg) if total_dmg > 0 else 0
-            jenny_earn = int(b['jenny_reward'] * share)
-            update_jenny(p_uid, jenny_earn)
-            # Give card reward
-            if b['card_rewards']:
-                reward_card = random.choice(b['card_rewards'])
-                add_hand_card(p_uid, reward_card)
-                rc = NUMBERED_CARDS[reward_card]
-                result.append(f"{i}. {p_name} — {p_dmg:,} dmg | +{jenny_earn:,} Jenny | +{rc['name']}")
-            else:
-                result.append(f"{i}. {p_name} — {p_dmg:,} dmg | +{jenny_earn:,} Jenny")
-
-        bot.send_message(chat_id, "\n".join(result), parse_mode='Markdown')
-    else:
-        text = (
-            f"⚔️{crit_text} *-{base_dmg:,} HP!*\n\n"
-            f"{b['emoji']} *{b['name']}*\n"
-            f"❤️ {new_hp:,}/{max_hp:,}\n"
-            f"[{bar}] {pct:.1f}%"
+        # Boss defeated — edit final message
+        result_text = (
+            f"💀 *{b['name']}* DEFEATED! {b['emoji']}\n\n"
+            f"Final blow by *{uname(call.from_user)}* with {r} *{c['name']}*!\n"
+            f"⚔️ *-{base_dmg:,} HP!*{bonus_text}"
         )
-        bot.reply_to(message, text, parse_mode='Markdown')
+        try:
+            bot.edit_message_text(result_text, chat_id, call.message.message_id, parse_mode='Markdown')
+        except: pass
+        _give_boss_rewards(fight_id, b, chat_id)
+    else:
+        bar, pct = boss_hp_bar(new_hp, max_hp)
+        new_text = (
+            f"👹 *{b['name']}* {b['emoji']}\n"
+            f"❤️ HP: *{new_hp:,}/{max_hp:,}*\n"
+            f"`[{bar}]` {pct:.1f}%\n\n"
+            f"⚔️{crit_text} *{uname(call.from_user)}* dealt *-{base_dmg:,} HP!*\n"
+            f"{r} {c['emoji']} *{c['name']}* — {c['ability']}{bonus_text}\n\n"
+            f"💰 Reward: {b['jenny_reward']:,} Jenny + Cards!"
+        )
+        try:
+            bot.edit_message_text(new_text, chat_id, msg_id, parse_mode='Markdown', reply_markup=attack_button(fight_id))
+        except: pass
+        bot.answer_callback_query(call.id, f"⚔️ -{base_dmg:,} HP dealt!")
+
+@bot.callback_query_handler(func=lambda call: call.data == 'cancel_attack')
+def cb_cancel_attack(call):
+    bot.answer_callback_query(call.id, "Cancelled!")
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except: pass
 
 # ─── /leaderboard ─────────────────────────────────────────────────────────────
 
