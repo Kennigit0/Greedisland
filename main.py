@@ -21,6 +21,45 @@ from cards_data import NUMBERED_CARDS, RARITY_EMOJI, RARITY_WEIGHTS, SPELL_CARDS
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 
+import traceback as _tb
+import functools
+
+_original_message_handler = bot.message_handler
+def _safe_message_handler(*args, **kwargs):
+    deco = _original_message_handler(*args, **kwargs)
+    def wrapper(func):
+        @functools.wraps(func)
+        def safe_func(message, *a, **kw):
+            try:
+                return func(message, *a, **kw)
+            except Exception as e:
+                print(f"❌ ERROR in {func.__name__}: {e}")
+                _tb.print_exc()
+                try:
+                    bot.reply_to(message, f"⚠️ Something went wrong: {e}\nTry again or contact admin.")
+                except: pass
+        return deco(safe_func)
+    return wrapper
+bot.message_handler = _safe_message_handler
+
+_original_callback_handler = bot.callback_query_handler
+def _safe_callback_handler(*args, **kwargs):
+    deco = _original_callback_handler(*args, **kwargs)
+    def wrapper(func):
+        @functools.wraps(func)
+        def safe_func(call, *a, **kw):
+            try:
+                return func(call, *a, **kw)
+            except Exception as e:
+                print(f"❌ ERROR in callback {func.__name__}: {e}")
+                _tb.print_exc()
+                try:
+                    bot.answer_callback_query(call.id, f"⚠️ Error: {e}"[:200])
+                except: pass
+        return deco(safe_func)
+    return wrapper
+bot.callback_query_handler = _safe_callback_handler
+
 # ─── Utilities ────────────────────────────────────────────────────────────────
 
 def uname(user):
@@ -925,27 +964,24 @@ def cmd_attack_legacy(message):
 
 def _show_card_picker(uid, chat_id, fight_id, message=None, call=None):
     hand = get_hand_cards(uid)
-    binder = get_binder_cards(uid)
-    all_cards = [(cid, qty, 'hand') for cid, qty in hand] + [(cid, 1, 'binder') for cid in binder]
 
-    if not all_cards:
-        txt = "❌ You have no cards! Use /drawcard first."
-        if call: bot.answer_callback_query(call.id, txt)
+    if not hand:
+        txt = "❌ You have no hand cards! Use /drawcard first.\n(Binder cards are locked safely and can't be risked in battle.)"
+        if call: bot.answer_callback_query(call.id, txt, show_alert=True)
         elif message: bot.reply_to(message, txt)
         return
 
     markup = types.InlineKeyboardMarkup(row_width=2)
     # Show top 8 cards by power
-    sorted_cards = sorted(all_cards, key=lambda x: NUMBERED_CARDS[x[0]]['power'], reverse=True)[:8]
-    for cid, qty, src in sorted_cards:
+    sorted_cards = sorted(hand, key=lambda x: NUMBERED_CARDS[x[0]]['power'], reverse=True)[:8]
+    for cid, qty in sorted_cards:
         c = NUMBERED_CARDS[cid]
         r = RARITY_EMOJI[c['rarity']]
-        lock = "🔒" if src == 'binder' else ""
-        btn_text = f"{r}{lock} {c['name']} (ATK:{c['atk']})"
+        btn_text = f"{r} {c['name']} (ATK:{c['atk']})"
         markup.add(types.InlineKeyboardButton(btn_text, callback_data=f"boss_attack_{fight_id}_{cid}"))
     markup.add(types.InlineKeyboardButton("❌ Cancel", callback_data="cancel_attack"))
 
-    txt = "🃏 *Choose your card to attack with:*"
+    txt = "🃏 *Choose your card to attack with:*\n⚠️ The boss may counterattack — your card could get hurt!"
     if call:
         bot.edit_message_text(txt, call.message.chat.id, call.message.message_id, parse_mode='Markdown', reply_markup=markup)
     elif message:
@@ -1042,20 +1078,55 @@ def cb_boss_attack(call):
             bot.edit_message_text(result_text, chat_id, call.message.message_id, parse_mode='Markdown')
         except: pass
         _give_boss_rewards(fight_id, b, chat_id)
-    else:
-        bar, pct = boss_hp_bar(new_hp, max_hp)
-        new_text = (
-            f"👹 *{b['name']}* {b['emoji']}\n"
-            f"❤️ HP: *{new_hp:,}/{max_hp:,}*\n"
-            f"`[{bar}]` {pct:.1f}%\n\n"
-            f"⚔️{crit_text} *{uname(call.from_user)}* dealt *-{base_dmg:,} HP!*\n"
-            f"{r} {c['emoji']} *{c['name']}* — {c['ability']}{bonus_text}\n\n"
-            f"💰 Reward: {b['jenny_reward']:,} Jenny + Cards!"
-        )
-        try:
-            bot.edit_message_text(new_text, chat_id, msg_id, parse_mode='Markdown', reply_markup=attack_button(fight_id))
-        except: pass
-        bot.answer_callback_query(call.id, f"⚔️ -{base_dmg:,} HP dealt!")
+        return
+
+    # BOSS COUNTERATTACK
+    counter_text = ""
+    dodge_chance = {"Common": 0.10, "Rare": 0.15, "Epic": 0.20, "Legendary": 0.25}[c['rarity']]
+    if c['ability_effect'] == 'dodge':
+        dodge_chance += 0.25
+    dodged = random.random() < dodge_chance
+
+    if dodged:
+        counter_text = f"\n🌀 *{c['name']}* dodged the boss's counterattack!"
+    elif random.random() < 0.75:
+        counter_dmg = max(15, b['atk'] - (c['def'] // 2) + random.randint(0, 40))
+        if c['ability_effect'] == 'shield':
+            counter_dmg = int(counter_dmg * 0.5)
+
+        break_chance = 0.30 if counter_dmg >= c['def'] else 0.0
+        card_broke = random.random() < break_chance
+
+        if card_broke:
+            remove_hand_card(uid, card_id)
+            set_last_discarded(uid, card_id)
+            counter_text = (
+                f"\n💥 *{b['name']}* counterattacks!\n"
+                f"💔 Your *{c['name']}* took {counter_dmg} dmg and was *destroyed!*\n"
+                f"💡 Use /usespell recover to try get it back."
+            )
+        else:
+            jenny_loss = min(get_jenny(uid), counter_dmg * 4)
+            update_jenny(uid, -jenny_loss)
+            counter_text = (
+                f"\n💥 *{b['name']}* counterattacks for {counter_dmg} dmg!\n"
+                f"💰 You lost *{jenny_loss:,} Jenny* in repairs!"
+            )
+
+    bar, pct = boss_hp_bar(new_hp, max_hp)
+    new_text = (
+        f"👹 *{b['name']}* {b['emoji']}\n"
+        f"❤️ HP: *{new_hp:,}/{max_hp:,}*\n"
+        f"`[{bar}]` {pct:.1f}%\n\n"
+        f"⚔️{crit_text} *{uname(call.from_user)}* dealt *-{base_dmg:,} HP!*\n"
+        f"{r} {c['emoji']} *{c['name']}* — {c['ability']}{bonus_text}"
+        f"{counter_text}\n\n"
+        f"💰 Reward: {b['jenny_reward']:,} Jenny + Cards!"
+    )
+    try:
+        bot.edit_message_text(new_text, chat_id, msg_id, parse_mode='Markdown', reply_markup=attack_button(fight_id))
+    except: pass
+    bot.answer_callback_query(call.id, f"⚔️ -{base_dmg:,} HP dealt!")
 
 @bot.callback_query_handler(func=lambda call: call.data == 'cancel_attack')
 def cb_cancel_attack(call):
