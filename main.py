@@ -157,8 +157,7 @@ def cmd_help(message):
         "/shop — Buy spell cards with Jenny\n"
         "/buy spell — Buy a specific spell\n\n"
         "━━ BATTLE ━━\n"
-        "/challenge — Reply to user + challenge\n"
-        "/accept — Reply to challenger + accept\n"
+        "/challenge — Reply to user, sends a challenge with Accept/Decline buttons\n"
         "/boss — View or summon a boss\n"
         "/summon boss_name — Summon a boss\n"
         "/attack — Attack the active boss\n\n"
@@ -724,7 +723,7 @@ def _check_quest_completion(uid, quest_type, chat_id):
 def cmd_challenge(message):
     if not check_registered(message): return
     if not message.reply_to_message:
-        bot.reply_to(message, "💡 Reply to someone's message to challenge them!\nExample: Reply to @player then send /challenge")
+        bot.reply_to(message, "💡 Reply to someone's message to challenge them!\nExample: Reply to their message, then send /challenge")
         return
     target = message.reply_to_message.from_user
     uid = message.from_user.id
@@ -751,46 +750,62 @@ def cmd_challenge(message):
         f"⚔️ PvP Challenge!\n\n"
         f"{c_name} challenges {t_name} to battle!\n\n"
         f"🏆 Winner steals one random hand card from loser!\n\n"
-        f"{t_name}: Reply with /accept {c_name.lstrip('@')} to accept!\n"
         f"⏳ Expires in 10 minutes | Challenge ID: #{cid}"
     )
-    bot.send_message(message.chat.id, text)
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("⚔️ Accept", callback_data=f"pvp_accept_{cid}_{target.id}"),
+        types.InlineKeyboardButton("❌ Decline", callback_data=f"pvp_decline_{cid}_{target.id}")
+    )
+    bot.send_message(message.chat.id, text, reply_markup=markup)
 
-@bot.message_handler(commands=['accept'])
-def cmd_accept(message):
-    if not check_registered(message): return
-    parts = message.text.split()
-    if len(parts) < 2:
-        bot.reply_to(message, "Usage: /accept @challenger_username")
+@bot.callback_query_handler(func=lambda call: call.data.startswith('pvp_decline_'))
+def cb_pvp_decline(call):
+    parts = call.data.split('_')
+    challenge_id = int(parts[2])
+    target_id = int(parts[3])
+    if call.from_user.id != target_id:
+        bot.answer_callback_query(call.id, "❌ This challenge isn't for you!", show_alert=True)
         return
-
-    uid = message.from_user.id
-    # Find challenge where this user is the target
-    # We search by username in the DB; get challenger by username
-    challenger_name = parts[1].lstrip('@')
-
-    conn_temp = None
+    close_pvp_challenge(challenge_id, 'declined')
+    bot.answer_callback_query(call.id, "Challenge declined")
     try:
-        import database as db
-        conn_temp = db.get_conn()
-        cur = conn_temp.cursor()
-        cur.execute("""
-            SELECT id, challenger_id, challenger_name FROM gi_pvp_challenges
-            WHERE target_id = %s AND status = 'pending'
-            AND created_at > NOW() - INTERVAL '10 minutes'
-            ORDER BY created_at DESC LIMIT 1
-        """, (uid,))
-        row = cur.fetchone()
-        cur.close()
-    except Exception as e:
-        bot.reply_to(message, f"❌ Error: {e}")
+        bot.edit_message_text(f"🚫 {uname(call.from_user)} declined the challenge.", call.message.chat.id, call.message.message_id)
+    except: pass
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('pvp_accept_'))
+def cb_pvp_accept(call):
+    parts = call.data.split('_')
+    challenge_id = int(parts[2])
+    target_id = int(parts[3])
+    uid = call.from_user.id
+
+    if not get_player(uid):
+        bot.answer_callback_query(call.id, "❌ Use /start first!", show_alert=True)
         return
+    if uid != target_id:
+        bot.answer_callback_query(call.id, "❌ This challenge isn't for you!", show_alert=True)
+        return
+
+    import database as db
+    conn = db.get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT challenger_id, challenger_name, target_name, status FROM gi_pvp_challenges
+        WHERE id = %s
+    """, (challenge_id,))
+    row = cur.fetchone()
+    cur.close()
 
     if not row:
-        bot.reply_to(message, "❌ No pending challenge found for you.")
+        bot.answer_callback_query(call.id, "❌ Challenge not found.", show_alert=True)
+        return
+    challenger_id, c_name, t_name, status = row
+    if status != 'pending':
+        bot.answer_callback_query(call.id, "❌ This challenge already ended.", show_alert=True)
         return
 
-    challenge_id, challenger_id, c_name = row
+    bot.answer_callback_query(call.id, "Battle starting!")
 
     # Battle!
     uid_power = _pvp_power(uid)
@@ -799,25 +814,23 @@ def cmd_accept(message):
     roll_c = c_power * random.uniform(0.7, 1.3)
 
     if roll_uid >= roll_c:
-        winner_id = uid
-        loser_id = challenger_id
-        winner_name = uname(message.from_user)
-        loser_name = c_name
+        winner_id, loser_id = uid, challenger_id
+        winner_name, loser_name = t_name, c_name
+        winner_roll, loser_roll = roll_uid, roll_c
     else:
-        winner_id = challenger_id
-        loser_id = uid
-        winner_name = c_name
-        loser_name = uname(message.from_user)
+        winner_id, loser_id = challenger_id, uid
+        winner_name, loser_name = c_name, t_name
+        winner_roll, loser_roll = roll_c, roll_uid
 
     # Steal a card
     loser_hand = get_hand_cards(loser_id)
     stolen_text = ""
     if loser_hand and not is_protected(loser_id):
-        cid, _ = random.choice(loser_hand)
-        remove_hand_card(loser_id, cid)
-        add_hand_card(winner_id, cid)
-        c = NUMBERED_CARDS[cid]
-        stolen_text = f"\n🎯 {winner_name} stole {c['emoji']} {c['name']} from {loser_name}!"
+        cid_won, _ = random.choice(loser_hand)
+        remove_hand_card(loser_id, cid_won)
+        add_hand_card(winner_id, cid_won)
+        cdat = NUMBERED_CARDS[cid_won]
+        stolen_text = f"\n🎯 {winner_name} stole {cdat['emoji']} {cdat['name']} from {loser_name}!"
     elif is_protected(loser_id):
         stolen_text = f"\n🔒 {loser_name} is protected — no card stolen!"
     else:
@@ -826,7 +839,7 @@ def cmd_accept(message):
     update_pvp_record(winner_id, loser_id)
     close_pvp_challenge(challenge_id, 'done')
     increment_quest(winner_id, "pvp_win", 1)
-    _check_quest_completion(winner_id, "pvp_win", message.chat.id)
+    _check_quest_completion(winner_id, "pvp_win", call.message.chat.id)
 
     jenny_prize = 200
     update_jenny(winner_id, jenny_prize)
@@ -835,12 +848,14 @@ def cmd_accept(message):
         f"⚔️ PvP Battle Result!\n\n"
         f"🏆 {winner_name} WINS!\n"
         f"💀 {loser_name} defeated\n\n"
-        f"Power: {winner_name} [{int(roll_uid if winner_id == uid else roll_c)}] vs "
-        f"{loser_name} [{int(roll_c if winner_id == uid else roll_uid)}]\n"
+        f"Power: {winner_name} [{int(winner_roll)}] vs {loser_name} [{int(loser_roll)}]\n"
         f"{stolen_text}\n"
         f"💰 +{jenny_prize} Jenny to winner!"
     )
-    bot.send_message(message.chat.id, text)
+    try:
+        bot.edit_message_text(text, call.message.chat.id, call.message.message_id)
+    except:
+        bot.send_message(call.message.chat.id, text)
 
 def _pvp_power(user_id):
     binder = get_binder_count(user_id)
