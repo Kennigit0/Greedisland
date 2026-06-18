@@ -70,6 +70,20 @@ def card_line(card_id):
     r = RARITY_EMOJI[c['rarity']]
     return f"{r} #{card_id:03d} {c['emoji']} {c['name']} [{c['rarity']}]"
 
+CARD_IMG_DIR = os.path.join(os.path.dirname(__file__), "assets", "cards")
+
+def card_photo_path(card_id):
+    p = os.path.join(CARD_IMG_DIR, f"{card_id:03d}.png")
+    return p if os.path.exists(p) else None
+
+def send_card_photo(chat_id, card_id, caption=None, reply_markup=None):
+    path = card_photo_path(card_id)
+    if path:
+        with open(path, 'rb') as f:
+            return bot.send_photo(chat_id, f, caption=caption, reply_markup=reply_markup)
+    else:
+        return bot.send_message(chat_id, caption or card_line(card_id), reply_markup=reply_markup)
+
 def draw_random_card():
     pool = []
     for card_id, card in NUMBERED_CARDS.items():
@@ -221,14 +235,12 @@ def cmd_drawcard(message):
 
     text = (
         f"🎴 Card Drawn!\n\n"
-        f"{r_emoji} {card['emoji']} {card['name']}\n"
-        f"🏷️ Rarity: {card['rarity']}\n"
-        f"🔢 Card #{card_id:03d}\n\n"
         f"💡 Use /addtobinder {card_id} to lock it in your binder!"
     )
 
     # Check quest completions
     _check_quest_completion(uid, "collect", message.chat.id)
+    send_card_photo(message.chat.id, card_id, caption=text)
     bot.send_message(message.chat.id, text)
 
 # ─── /cards ───────────────────────────────────────────────────────────────────
@@ -267,19 +279,7 @@ def cmd_cardinfo(message):
         return
     c = NUMBERED_CARDS[cid]
     r = RARITY_EMOJI[c['rarity']]
-    text = (
-        f"{r} Card #{cid:03d} — {c['name']} {c['emoji']}\n"
-        f"🏷️ Rarity: {c['rarity']}\n\n"
-        f"━━━ Battle Stats ━━━\n"
-        f"⚔️ Attack:  {c['atk']}\n"
-        f"🛡️ Defense: {c['def']}\n"
-        f"⚡ Speed:   {c['spd']}\n"
-        f"💪 Total Power: {c['power']}\n\n"
-        f"━━━ Ability ━━━\n"
-        f"✨ {c['ability']}\n"
-        f"_{c['ability_desc']}_"
-    )
-    bot.reply_to(message, text)
+    send_card_photo(message.chat.id, cid, caption=f"{r} Card #{cid:03d} — {c['name']}")
 
 # ─── /binder ─────────────────────────────────────────────────────────────────
 
@@ -342,7 +342,7 @@ def cmd_addtobinder(message):
     count = get_binder_count(uid)
     c = NUMBERED_CARDS[cid]
     _check_quest_completion(uid, "binder", message.chat.id)
-    bot.reply_to(message, f"📚 {c['emoji']} {c['name']} added to binder!\n📊 Binder: {count}/100")
+    send_card_photo(message.chat.id, cid, caption=f"📚 {c['name']} added to binder!\n📊 Binder: {count}/100")
 
 # ─── /removefromBinder ────────────────────────────────────────────────────────
 
@@ -886,6 +886,7 @@ def _give_boss_rewards(fight_id, b, chat_id):
     participants = get_boss_participants(fight_id)
     total_dmg = sum(d for _, _, d in participants)
     result = [f"💀 {b['name']} DEFEATED! {b['emoji']}\n\n🏆 Battle Results:\n"]
+    rewards = []
     for i, (p_uid, p_name, p_dmg) in enumerate(participants, 1):
         share = (p_dmg / total_dmg) if total_dmg > 0 else 0
         jenny_earn = int(b['jenny_reward'] * share)
@@ -895,7 +896,10 @@ def _give_boss_rewards(fight_id, b, chat_id):
         rc = NUMBERED_CARDS[reward_card]
         r = RARITY_EMOJI[rc['rarity']]
         result.append(f"{i}. {p_name} — {p_dmg:,} dmg\n   +{jenny_earn:,} Jenny | {r} {rc['name']}")
+        rewards.append((p_name, reward_card, rc))
     bot.send_message(chat_id, "\n".join(result))
+    for p_name, reward_card, rc in rewards:
+        send_card_photo(chat_id, reward_card, caption=f"🎁 Reward for {p_name}: {rc['name']}!")
 
 # ─── /boss ────────────────────────────────────────────────────────────────────
 
