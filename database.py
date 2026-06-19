@@ -127,6 +127,14 @@ def init_db():
         )
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS gi_known_chats (
+            chat_id BIGINT PRIMARY KEY,
+            title TEXT,
+            last_seen TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
     # Indexes
     cur.execute("CREATE INDEX IF NOT EXISTS idx_gi_hand_user ON gi_hand_cards(user_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_gi_binder_user ON gi_binder(user_id)")
@@ -164,7 +172,7 @@ def get_player(user_id):
 def update_jenny(user_id, amount):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("UPDATE gi_players SET jenny = jenny + %s WHERE user_id = %s RETURNING jenny", (amount, user_id))
+    cur.execute("UPDATE gi_players SET jenny = GREATEST(0, jenny + %s) WHERE user_id = %s RETURNING jenny", (amount, user_id))
     result = cur.fetchone()
     conn.commit()
     cur.close()
@@ -532,3 +540,106 @@ def update_last_draw(user_id):
     cur.execute("UPDATE gi_players SET last_draw = NOW() WHERE user_id = %s", (user_id,))
     conn.commit()
     cur.close()
+
+def reset_draw_cooldown(user_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE gi_players SET last_draw = NULL WHERE user_id = %s", (user_id,))
+    conn.commit()
+    cur.close()
+
+# ─── Chat tracking (for /broadcast) ───────────────────────────────────────────
+
+def upsert_chat(chat_id, title):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO gi_known_chats (chat_id, title) VALUES (%s, %s)
+        ON CONFLICT (chat_id) DO UPDATE SET title = %s, last_seen = NOW()
+    """, (chat_id, title, title))
+    conn.commit()
+    cur.close()
+
+def get_all_chat_ids():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT chat_id FROM gi_known_chats")
+    rows = cur.fetchall()
+    cur.close()
+    return [r[0] for r in rows]
+
+# ─── Admin helpers ─────────────────────────────────────────────────────────────
+
+def cancel_boss_fight(fight_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE gi_boss_fights SET status = 'cancelled' WHERE id = %s", (fight_id,))
+    conn.commit()
+    cur.close()
+
+def set_jenny_absolute(user_id, amount):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE gi_players SET jenny = %s WHERE user_id = %s RETURNING jenny", (amount, user_id))
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    return row[0] if row else 0
+
+def clear_protection(user_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE gi_players SET protected_until = NULL WHERE user_id = %s", (user_id,))
+    conn.commit()
+    cur.close()
+
+def reset_player(user_id):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM gi_hand_cards WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM gi_binder WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM gi_spell_cards WHERE user_id = %s", (user_id,))
+    cur.execute("""
+        UPDATE gi_players SET jenny = 1000, wins = 0, losses = 0,
+        total_cards_collected = 0, protected_until = NULL, last_draw = NULL
+        WHERE user_id = %s
+    """, (user_id,))
+    conn.commit()
+    cur.close()
+
+def get_global_stats():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM gi_players")
+    total_players = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(SUM(jenny),0) FROM gi_players")
+    total_jenny = cur.fetchone()[0]
+    cur.execute("SELECT COALESCE(SUM(quantity),0) FROM gi_hand_cards")
+    total_hand_cards = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM gi_binder")
+    total_binder_cards = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM gi_boss_fights WHERE status = 'active'")
+    active_bosses = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM gi_known_chats")
+    total_chats = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM gi_players WHERE (SELECT COUNT(*) FROM gi_binder b WHERE b.user_id = gi_players.user_id) = 100")
+    completed_games = cur.fetchone()[0]
+    cur.close()
+    return {
+        "total_players": total_players,
+        "total_jenny": total_jenny,
+        "total_hand_cards": total_hand_cards,
+        "total_binder_cards": total_binder_cards,
+        "active_bosses": active_bosses,
+        "total_chats": total_chats,
+        "completed_games": completed_games,
+    }
+
+def find_user_by_username(username):
+    """username without leading @"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT user_id FROM gi_players WHERE username ILIKE %s", (f"@{username}",))
+    row = cur.fetchone()
+    cur.close()
+    return row[0] if row else None

@@ -14,12 +14,22 @@ from database import (
     create_pvp_challenge, get_pending_challenge, close_pvp_challenge, update_pvp_record,
     get_active_boss, create_boss_fight, damage_boss, get_boss_participants,
     get_leaderboard, is_protected, set_protection,
-    set_last_discarded, get_last_discarded, can_draw, update_last_draw
+    set_last_discarded, get_last_discarded, can_draw, update_last_draw,
+    reset_draw_cooldown, upsert_chat, get_all_chat_ids, cancel_boss_fight,
+    set_jenny_absolute, clear_protection, reset_player, get_global_stats,
+    find_user_by_username, update_boss_message_id
 )
 from cards_data import NUMBERED_CARDS, RARITY_EMOJI, RARITY_WEIGHTS, SPELL_CARDS, BOSSES, DAILY_QUESTS
 
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
+
+# ─── Admin config ─────────────────────────────────────────────────────────────
+_admin_env = os.environ.get('ADMIN_IDS', '1173060685')
+ADMIN_IDS = set(int(x.strip()) for x in _admin_env.split(',') if x.strip().isdigit())
+
+def is_admin(user_id):
+    return user_id in ADMIN_IDS
 
 import traceback as _tb
 import functools
@@ -31,6 +41,10 @@ def _safe_message_handler(*args, **kwargs):
         @functools.wraps(func)
         def safe_func(message, *a, **kw):
             try:
+                try:
+                    title = getattr(message.chat, 'title', None) or getattr(message.chat, 'first_name', None) or 'Unknown'
+                    upsert_chat(message.chat.id, title)
+                except: pass
                 return func(message, *a, **kw)
             except Exception as e:
                 print(f"❌ ERROR in {func.__name__}: {e}")
@@ -172,6 +186,8 @@ def cmd_help(message):
         "Bosses: chimera_ant | phantom_troupe | hisoka | meruem"
     )
     bot.send_message(message.chat.id, text)
+    if is_admin(message.from_user.id):
+        bot.send_message(message.chat.id, "🛠️ You're an admin — see /adminhelp for admin commands.")
 
 # ─── /profile ─────────────────────────────────────────────────────────────────
 
@@ -240,7 +256,6 @@ def cmd_drawcard(message):
     # Check quest completions
     _check_quest_completion(uid, "collect", message.chat.id)
     send_card_photo(message.chat.id, card_id, caption=text)
-    bot.send_message(message.chat.id, text)
 
 # ─── /cards ───────────────────────────────────────────────────────────────────
 
@@ -590,7 +605,7 @@ def cmd_usespell(message):
             _check_quest_completion(uid, "use_spell", message.chat.id)
             bot.reply_to(message, f"🎯 Levy success!\nStole {c['emoji']} {c['name']} from {t_name}!")
             try:
-                bot.send_message(target_id, f"🎯 Levy spell! {uname(message.from_user)} stole your {c['name']}!\nUse /protect to prevent future theft.")
+                bot.send_message(target_id, f"🎯 Levy spell! {uname(message.from_user)} stole your {c['name']}!\nUse /usespell protect to prevent future theft.")
             except: pass
 
         elif spell_id == "clone":
@@ -706,7 +721,7 @@ def _check_quest_completion(uid, quest_type, chat_id):
             continue
         row = get_quest_progress(uid, q['id'])
         if not row:
-            return
+            continue
         progress, completed = row
         if not completed and progress >= q['target']:
             complete_quest(uid, q['id'])
@@ -963,7 +978,6 @@ def _do_summon(chat_id, boss_id, message=None):
     fight_id = create_boss_fight(chat_id, boss_id, b['max_hp'])
     text = boss_message_text(b, boss_id, b['max_hp'], b['max_hp'], fight_id)
     sent = bot.send_message(chat_id, "🚨 BOSS APPEARED! 🚨\n\n" + text, reply_markup=attack_button(fight_id))
-    from database import update_boss_message_id
     update_boss_message_id(fight_id, sent.message_id)
 
 @bot.message_handler(commands=['attack'])
@@ -1014,7 +1028,13 @@ def cb_summon(call):
         bot.answer_callback_query(call.id, "❌ Use /start first!")
         return
     boss_id = call.data.replace('summon_', '')
-    bot.answer_callback_query(call.id, f"Summoning {BOSSES.get(boss_id, {}).get('name', '?')}...")
+    if boss_id not in BOSSES:
+        bot.answer_callback_query(call.id, "❌ Unknown boss.")
+        return
+    if get_active_boss(call.message.chat.id):
+        bot.answer_callback_query(call.id, "❌ A boss is already active here!", show_alert=True)
+        return
+    bot.answer_callback_query(call.id, f"Summoning {BOSSES[boss_id]['name']}...")
     _do_summon(call.message.chat.id, boss_id)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('boss_choose_'))
@@ -1143,7 +1163,8 @@ def cb_boss_attack(call):
         f"💰 Reward: {b['jenny_reward']:,} Jenny + Cards!"
     )
     try:
-        bot.edit_message_text(new_text, chat_id, msg_id, reply_markup=attack_button(fight_id))
+        bot.edit_message_text(new_text, chat_id, call.message.message_id, reply_markup=attack_button(fight_id))
+        update_boss_message_id(fight_id, call.message.message_id)
     except: pass
     bot.answer_callback_query(call.id, f"⚔️ -{base_dmg:,} HP dealt!")
 
@@ -1288,6 +1309,231 @@ def cmd_accept_trade(message):
         f"✅ Trade Complete!\n\n"
         f"🔄 {oc['emoji']} {oc['name']} ↔️ {wc['emoji']} {wc['name']}\n"
         f"Successfully exchanged!")
+
+# ─── ADMIN COMMANDS ───────────────────────────────────────────────────────────
+
+def _admin_only(message):
+    if not is_admin(message.from_user.id):
+        bot.reply_to(message, "❌ Admin only command.")
+        return False
+    return True
+
+def _resolve_target_and_value(message, parts):
+    """Returns (target_id, target_label, value_str) or (None, None, None) if can't resolve."""
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        target_label = uname(message.reply_to_message.from_user)
+        value_str = parts[1] if len(parts) > 1 else None
+    elif len(parts) > 2 and parts[1].lstrip('-').isdigit():
+        target_id = int(parts[1])
+        p = get_player(target_id)
+        target_label = p['username'] if p else str(target_id)
+        value_str = parts[2]
+    else:
+        return None, None, None
+    return target_id, target_label, value_str
+
+def _resolve_target_only(message, parts):
+    """Returns (target_id, target_label) or (None, None)."""
+    if message.reply_to_message:
+        target_id = message.reply_to_message.from_user.id
+        target_label = uname(message.reply_to_message.from_user)
+    elif len(parts) > 1 and parts[1].lstrip('-').isdigit():
+        target_id = int(parts[1])
+        p = get_player(target_id)
+        target_label = p['username'] if p else str(target_id)
+    else:
+        return None, None
+    return target_id, target_label
+
+@bot.message_handler(commands=['adminhelp'])
+def cmd_adminhelp(message):
+    if not _admin_only(message): return
+    text = (
+        "🛠️ ADMIN COMMANDS\n\n"
+        "Reply to a player's message OR pass their numeric user_id as the first argument.\n\n"
+        "━━ PLAYER ━━\n"
+        "/givecard [user_id] card_id — Add a card to hand\n"
+        "/removecard [user_id] card_id — Remove a card from hand\n"
+        "/givejenny [user_id] amount — Add Jenny\n"
+        "/removejenny [user_id] amount — Remove Jenny\n"
+        "/setjenny [user_id] amount — Set exact Jenny balance\n"
+        "/unprotect [user_id] — Remove their theft protection\n"
+        "/resetcooldown [user_id] — Reset their /drawcard cooldown\n"
+        "/resetplayer [user_id] — Wipe their cards/jenny/stats (irreversible!)\n\n"
+        "━━ BOSS ━━\n"
+        "/endboss — Cancel the active boss fight in this chat (no rewards)\n\n"
+        "━━ SERVER ━━\n"
+        "/botstats — Global bot statistics\n"
+        "/broadcast text — Send a message to every chat the bot has seen\n"
+    )
+    bot.reply_to(message, text)
+
+@bot.message_handler(commands=['givecard'])
+def cmd_admin_givecard(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label, value_str = _resolve_target_and_value(message, parts)
+    if target_id is None or not value_str or not value_str.isdigit():
+        bot.reply_to(message, "Usage: reply to player + /givecard <card_id>\nOr: /givecard <user_id> <card_id>")
+        return
+    cid = int(value_str)
+    if cid not in NUMBERED_CARDS:
+        bot.reply_to(message, "❌ Invalid card ID (1–100).")
+        return
+    if not get_player(target_id):
+        bot.reply_to(message, "❌ That user hasn't started the game.")
+        return
+    add_hand_card(target_id, cid)
+    c = NUMBERED_CARDS[cid]
+    bot.reply_to(message, f"✅ Gave {c['emoji']} {c['name']} to {target_label}'s hand.")
+
+@bot.message_handler(commands=['removecard'])
+def cmd_admin_removecard(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label, value_str = _resolve_target_and_value(message, parts)
+    if target_id is None or not value_str or not value_str.isdigit():
+        bot.reply_to(message, "Usage: reply to player + /removecard <card_id>\nOr: /removecard <user_id> <card_id>")
+        return
+    cid = int(value_str)
+    ok = remove_hand_card(target_id, cid)
+    if not ok:
+        bot.reply_to(message, f"❌ {target_label} doesn't have Card #{cid:03d} in hand.")
+        return
+    c = NUMBERED_CARDS.get(cid, {"name": f"#{cid}", "emoji": "🃏"})
+    bot.reply_to(message, f"✅ Removed {c['emoji']} {c['name']} from {target_label}'s hand.")
+
+@bot.message_handler(commands=['givejenny'])
+def cmd_admin_givejenny(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label, value_str = _resolve_target_and_value(message, parts)
+    if target_id is None or not value_str or not value_str.lstrip('-').isdigit():
+        bot.reply_to(message, "Usage: reply to player + /givejenny <amount>\nOr: /givejenny <user_id> <amount>")
+        return
+    if not get_player(target_id):
+        bot.reply_to(message, "❌ That user hasn't started the game.")
+        return
+    new_bal = update_jenny(target_id, int(value_str))
+    bot.reply_to(message, f"✅ Gave {int(value_str):,} Jenny to {target_label}.\nNew balance: {new_bal:,}")
+
+@bot.message_handler(commands=['removejenny'])
+def cmd_admin_removejenny(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label, value_str = _resolve_target_and_value(message, parts)
+    if target_id is None or not value_str or not value_str.lstrip('-').isdigit():
+        bot.reply_to(message, "Usage: reply to player + /removejenny <amount>\nOr: /removejenny <user_id> <amount>")
+        return
+    if not get_player(target_id):
+        bot.reply_to(message, "❌ That user hasn't started the game.")
+        return
+    current = get_jenny(target_id)
+    deduct = min(current, int(value_str))
+    new_bal = update_jenny(target_id, -deduct)
+    bot.reply_to(message, f"✅ Removed {deduct:,} Jenny from {target_label}.\nNew balance: {new_bal:,}")
+
+@bot.message_handler(commands=['setjenny'])
+def cmd_admin_setjenny(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label, value_str = _resolve_target_and_value(message, parts)
+    if target_id is None or not value_str or not value_str.lstrip('-').isdigit():
+        bot.reply_to(message, "Usage: reply to player + /setjenny <amount>\nOr: /setjenny <user_id> <amount>")
+        return
+    if not get_player(target_id):
+        bot.reply_to(message, "❌ That user hasn't started the game.")
+        return
+    new_bal = set_jenny_absolute(target_id, max(0, int(value_str)))
+    bot.reply_to(message, f"✅ Set {target_label}'s Jenny to {new_bal:,}")
+
+@bot.message_handler(commands=['unprotect'])
+def cmd_admin_unprotect(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label = _resolve_target_only(message, parts)
+    if target_id is None:
+        bot.reply_to(message, "Usage: reply to player + /unprotect\nOr: /unprotect <user_id>")
+        return
+    clear_protection(target_id)
+    bot.reply_to(message, f"✅ Removed theft protection from {target_label}.")
+
+@bot.message_handler(commands=['resetcooldown'])
+def cmd_admin_resetcooldown(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label = _resolve_target_only(message, parts)
+    if target_id is None:
+        bot.reply_to(message, "Usage: reply to player + /resetcooldown\nOr: /resetcooldown <user_id>")
+        return
+    reset_draw_cooldown(target_id)
+    bot.reply_to(message, f"✅ Reset draw cooldown for {target_label}.")
+
+@bot.message_handler(commands=['resetplayer'])
+def cmd_admin_resetplayer(message):
+    if not _admin_only(message): return
+    parts = message.text.split()
+    target_id, target_label = _resolve_target_only(message, parts)
+    if target_id is None:
+        bot.reply_to(message, "Usage: reply to player + /resetplayer\nOr: /resetplayer <user_id>")
+        return
+    if not get_player(target_id):
+        bot.reply_to(message, "❌ That user hasn't started the game.")
+        return
+    reset_player(target_id)
+    bot.reply_to(message, f"⚠️ {target_label}'s data has been fully reset (cards, jenny, stats).")
+
+@bot.message_handler(commands=['endboss'])
+def cmd_admin_endboss(message):
+    if not _admin_only(message): return
+    chat_id = message.chat.id
+    active = get_active_boss(chat_id)
+    if not active:
+        bot.reply_to(message, "❌ No active boss in this chat.")
+        return
+    fight_id, boss_id, hp, max_hp, msg_id = active
+    cancel_boss_fight(fight_id)
+    b = BOSSES[boss_id]
+    bot.reply_to(message, f"🛑 {b['name']} fight cancelled by admin. No rewards given.")
+    if msg_id:
+        try:
+            bot.edit_message_text(f"🛑 This boss fight was cancelled by an admin.", chat_id, msg_id)
+        except: pass
+
+@bot.message_handler(commands=['botstats'])
+def cmd_admin_botstats(message):
+    if not _admin_only(message): return
+    s = get_global_stats()
+    text = (
+        "📊 GREED ISLAND — Global Stats\n\n"
+        f"👥 Total Players: {s['total_players']:,}\n"
+        f"💰 Total Jenny in circulation: {s['total_jenny']:,}\n"
+        f"🃏 Cards in hands: {s['total_hand_cards']:,}\n"
+        f"📚 Cards in binders: {s['total_binder_cards']:,}\n"
+        f"👹 Active boss fights: {s['active_bosses']:,}\n"
+        f"💬 Known chats: {s['total_chats']:,}\n"
+        f"🏆 Completed games (100/100): {s['completed_games']:,}"
+    )
+    bot.reply_to(message, text)
+
+@bot.message_handler(commands=['broadcast'])
+def cmd_admin_broadcast(message):
+    if not _admin_only(message): return
+    text = message.text.split(maxsplit=1)
+    if len(text) < 2:
+        bot.reply_to(message, "Usage: /broadcast <message>")
+        return
+    content = text[1]
+    chat_ids = get_all_chat_ids()
+    sent, failed = 0, 0
+    for cid in chat_ids:
+        try:
+            bot.send_message(cid, f"📢 Announcement:\n\n{content}")
+            sent += 1
+        except:
+            failed += 1
+    bot.reply_to(message, f"📢 Broadcast sent to {sent} chats ({failed} failed).")
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
